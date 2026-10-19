@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/lyric_line.dart';
 import '../models/music_collection.dart';
 import '../models/music_platform.dart';
 import '../models/song.dart';
@@ -277,15 +279,141 @@ class ApiService {
     return const {};
   }
 
-  Future<String> fetchLyric(String platform, String id) async {
+  /// Fetches lyrics and normalises every shape the backend may return:
+  /// plain LRC text, `{ lrc: ... }`, `{ lyric: { lyric: ... } }`,
+  /// JSON-in-string, or a list of `{ time, text }` objects.
+  Future<List<LyricLine>> fetchLyricLines(
+    String platform,
+    String id, {
+    String title = '',
+    String artist = '',
+  }) async {
+    // The backend resolves lyrics by metadata; without `title` it answers
+    // `no lyric found` even when the song does have lyrics.
     final data = await _get('api/external/lyric', {
       'platform': platform,
       'id': id,
+      if (title.isNotEmpty) 'title': title,
+      if (artist.isNotEmpty) 'artist': artist,
     });
-    if (data is Map) {
-      final raw = data['rawLrc'] ?? data['lrc'] ?? data['lyric'];
-      if (raw != null) return '$raw';
+    final lines = _extractLyrics(data);
+    debugPrint(
+      '[lyric] type=${data.runtimeType} parsed=${lines.length} '
+      'preview=${_preview(data)}',
+    );
+    return lines;
+  }
+
+  String _preview(dynamic data) {
+    final text = '$data'.replaceAll(RegExp(r'\s+'), ' ');
+    return text.length > 300 ? '${text.substring(0, 300)}...' : text;
+  }
+
+  List<LyricLine> _extractLyrics(dynamic data, [int depth = 0]) {
+    if (data == null || depth > 4) return const [];
+
+    if (data is String) {
+      final text = data.trim();
+      if (text.isEmpty) return const [];
+      final looksJson = (text.startsWith('{') && text.endsWith('}')) ||
+          (text.startsWith('[') && text.endsWith(']'));
+      if (looksJson) {
+        try {
+          final decoded = jsonDecode(text);
+          final nested = _extractLyrics(decoded, depth + 1);
+          if (nested.isNotEmpty) return nested;
+        } catch (_) {}
+      }
+      final parsed = parseLrc(text);
+      return parsed.isNotEmpty ? parsed : _staticLyrics(text);
     }
-    return '';
+
+    if (data is List) {
+      final lines = <LyricLine>[];
+      for (final item in data) {
+        if (item is Map) {
+          final rawTime = item['time'] ??
+              item['startTime'] ??
+              item['start'] ??
+              item['t'] ??
+              item['timestamp'];
+          final content = item['text'] ??
+              item['lineLyric'] ??
+              item['lyric'] ??
+              item['content'] ??
+              item['words'] ??
+              item['lrc'];
+          if (content != null) {
+            lines.add(LyricLine(
+              Duration(milliseconds: _asMs(rawTime)),
+              '$content'.trim(),
+            ));
+          }
+        }
+      }
+      if (lines.isNotEmpty) {
+        lines.sort((a, b) => a.time.compareTo(b.time));
+        return lines;
+      }
+      return _extractLyrics(
+          data.map((e) => '$e').join('\n'), depth + 1);
+    }
+
+    if (data is Map) {
+      const keys = [
+        'rawLrc',
+        'lrc',
+        'lyric',
+        'lyrics',
+        'lyricText',
+        'txt',
+        'content',
+        'text',
+        'krc',
+        'yrc',
+        'lines',
+        'data',
+        'result',
+      ];
+      for (final key in keys) {
+        if (data.containsKey(key)) {
+          final parsed = _extractLyrics(data[key], depth + 1);
+          if (parsed.isNotEmpty) return parsed;
+        }
+      }
+    }
+
+    return const [];
+  }
+
+  /// Lyrics without timestamps still deserve to be shown.
+  List<LyricLine> _staticLyrics(String text) {
+    return text
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map((line) => LyricLine(Duration.zero, line))
+        .toList();
+  }
+
+  int _asMs(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is num) {
+      final value = raw.toDouble();
+      // Values below 1000 are almost always fractions of a second.
+      return (value < 1000 ? value * 1000 : value).round();
+    }
+    final text = '$raw'.trim();
+    final clock = RegExp(r'^(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?$')
+        .firstMatch(text);
+    if (clock != null) {
+      final min = int.tryParse(clock.group(1) ?? '0') ?? 0;
+      final sec = int.tryParse(clock.group(2) ?? '0') ?? 0;
+      final frac = (clock.group(3) ?? '0').padRight(3, '0').substring(0, 3);
+      return min * 60000 + sec * 1000 + (int.tryParse(frac) ?? 0);
+    }
+    final value = double.tryParse(text);
+    if (value == null) return 0;
+    return (value < 1000 ? value * 1000 : value).round();
   }
 }

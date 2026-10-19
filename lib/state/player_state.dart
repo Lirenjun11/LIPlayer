@@ -338,9 +338,14 @@ class PlayerState extends ChangeNotifier {
     currentLyricIndex = -1;
     notifyListeners();
     try {
-      final raw = await api.fetchLyric(song.platform, song.id);
+      final lines = await api.fetchLyricLines(
+        song.platform,
+        song.id,
+        title: song.title,
+        artist: song.artist,
+      );
       if (lyricToken != _lyricToken || token != _playToken) return;
-      lyrics = raw.isEmpty ? const [] : parseLrc(raw);
+      lyrics = lines;
     } catch (_) {
       if (lyricToken == _lyricToken) lyrics = const [];
     } finally {
@@ -354,6 +359,8 @@ class PlayerState extends ChangeNotifier {
 
   void _updateLyricIndex() {
     if (lyrics.isEmpty) return;
+    // Unsynchronised lyrics have no timestamps; keep them unhighlighted.
+    if (lyrics.every((line) => line.time == Duration.zero)) return;
     final ms = position.inMilliseconds;
     var idx = -1;
     for (var i = 0; i < lyrics.length; i++) {
