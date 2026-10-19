@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		打包方式：
+		  app-store-connect  -> 上传 App Store / TestFlight
+		  release-testing    -> TestFlight 内部测试
+		  ad-hoc             -> 指定设备安装（需在描述文件中登记 UDID）
+		  development        -> 开发调试
+		  enterprise         -> 企业分发
+	-->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>stripSwiftSymbols</key>
+	<true/>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>compileBitcode</key>
+	<false/>
+	<!--
+		若使用手工描述文件，取消下面两处注释并填写自己的 Team ID / 描述文件名：
+		<key>teamID</key>
+		<string>YOUR_TEAM_ID</string>
+		<key>provisioningProfiles</key>
+		<dict>
+			<key>com.lirenjun.musicplayer</key>
+			<string>LIPlayer_Profile_Name</string>
+		</dict>
+	-->
+</dict>
+</plist>

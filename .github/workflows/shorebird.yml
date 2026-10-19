@@ -1,0 +1,90 @@
+name: Shorebird OTA (hot update)
+
+# 热更新（Code Push）：
+# 1. 首次上架/安装的包必须用 `shorebird release ios` 构建；
+# 2. 之后改动只推补丁：`shorebird patch ios`，App 下次冷启动自动更新。
+# 需要仓库 Secret：SHOREBIRD_TOKEN（https://console.shorebird.dev 获取）
+# 若首次使用，请先在本地执行 `shorebird init` 并提交生成的 shorebird.yaml。
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'release = 生成基线安装包；patch = 推送热更新补丁'
+        type: choice
+        options: [patch, release]
+        default: patch
+
+concurrency:
+  group: shorebird-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ship:
+    name: Shorebird ${{ inputs.mode }}
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      FLUTTER_VERSION: '3.47.7'
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Shorebird
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify configuration
+        run: |
+          if [ -z "$SHOREBIRD_TOKEN" ]; then
+            echo "::error::缺少仓库 Secret SHOREBIRD_TOKEN，请先到 console.shorebird.dev 生成并配置。"
+            exit 1
+          fi
+          if [ ! -f shorebird.yaml ]; then
+            echo "::error::缺少 shorebird.yaml。请在本地执行 'shorebird init' 后提交该文件。"
+            exit 1
+          fi
+          cat shorebird.yaml
+
+      # ---------- 基线包 ----------
+      - name: Shorebird release
+        if: inputs.mode == 'release'
+        run: shorebird release ios --no-codesign
+
+      - name: Upload release artifacts
+        if: inputs.mode == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorebird-release-ipa
+          path: |
+            build/ios/ipa/*.ipa
+            build/ios/archive/*.xcarchive
+          if-no-files-found: ignore
+
+      # ---------- 热更新补丁 ----------
+      - name: Shorebird patch
+        if: inputs.mode == 'patch'
+        run: shorebird patch ios
+
+      - name: Summary
+        run: |
+          echo "### Shorebird ${{ inputs.mode }} 完成" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ inputs.mode }}" = "patch" ]; then
+            echo "- 补丁已推送到 Shorebird 控制台，用户下次冷启动时自动下载并应用。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- 已生成基线安装包，请下载 artifact 用 Sideloadly / AltStore 侧载。" >> "$GITHUB_STEP_SUMMARY"
+          fi
