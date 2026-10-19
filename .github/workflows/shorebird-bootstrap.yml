@@ -1,0 +1,72 @@
+name: Shorebird bootstrap (create app)
+
+# 一次性任务：在 Shorebird 注册应用并生成 shorebird.yaml。
+# 控制台没有「创建应用」入口，应用只能由 CLI 的 `shorebird init` 创建。
+#
+# 前置：仓库 Secret 已配置 SHOREBIRD_TOKEN
+#       （console.shorebird.dev → 左侧 Account → API Keys → 创建）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  init:
+    name: shorebird init
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    env:
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify token
+        run: |
+          if [ -z "$SHOREBIRD_TOKEN" ]; then
+            echo "::error title=缺少 token::请先在仓库 Settings → Secrets → Actions 添加 SHOREBIRD_TOKEN"
+            exit 1
+          fi
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: Setup Shorebird
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Shorebird init
+        run: |
+          if [ -f shorebird.yaml ]; then
+            echo "shorebird.yaml 已存在，跳过创建："
+            cat shorebird.yaml
+            exit 0
+          fi
+          shorebird init --force
+          echo "--- 生成结果 ---"
+          cat shorebird.yaml
+
+      - name: Commit shorebird.yaml
+        run: |
+          if git status --porcelain | grep -q shorebird.yaml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add shorebird.yaml
+            git commit -m "chore: register app with Shorebird"
+            git push
+            echo "::notice title=完成::shorebird.yaml 已提交，接下来运行 'Shorebird OTA' → release"
+          else
+            echo "::notice title=无需提交::shorebird.yaml 没有变化"
+          fi
