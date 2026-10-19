@@ -18,6 +18,7 @@ on:
       # 只改文档或工作流时不必重新打包
       - '**.md'
       - '.github/**'
+      - '.gitignore'
 
 concurrency:
   group: ios-ipa-${{ github.ref }}

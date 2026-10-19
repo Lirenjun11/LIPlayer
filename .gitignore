@@ -37,3 +37,6 @@ ios/Flutter/flutter_export_environment.sh
 *.ipa
 *.apk
 Payload/
+
+# 不在 GitHub 首页展示说明文档
+README.md
