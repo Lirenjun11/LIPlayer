@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/audio_quality.dart';
 import '../state/player_state.dart';
 import '../theme.dart';
 import '../utils/format.dart';
@@ -20,7 +22,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _rotation;
   final ScrollController _lyricController = ScrollController();
+  Timer? _userScrollTimer;
   bool _userScrolling = false;
+  int _lastLyricIndex = -1;
+  String? _lastSongKey;
   double? _dragValue;
 
   @override
@@ -30,19 +35,31 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
       vsync: this,
       duration: const Duration(seconds: 24),
     );
-    _lyricController.addListener(() {
-      if (!_lyricController.hasClients) return;
-      final atBottom = _lyricController.position.pixels >=
-          _lyricController.position.maxScrollExtent - 8;
-      _userScrolling = !atBottom;
-    });
   }
 
   @override
   void dispose() {
+    _userScrollTimer?.cancel();
     _rotation.dispose();
     _lyricController.dispose();
     super.dispose();
+  }
+
+  /// Only a real finger drag pauses auto-scroll; programmatic animations
+  /// (`animateTo`) also emit scroll notifications, so checking the position
+  /// alone used to disable auto-scroll permanently.
+  bool _onLyricScroll(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _userScrollTimer?.cancel();
+      _userScrolling = true;
+    } else if (notification is ScrollEndNotification) {
+      _userScrollTimer?.cancel();
+      _userScrollTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) _userScrolling = false;
+      });
+    }
+    return false;
   }
 
   void _syncRotation(bool playing) {
@@ -55,19 +72,22 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
   void _autoScrollLyrics(PlayerState player) {
     if (_userScrolling) return;
-    if (player.currentLyricIndex < 0) return;
+    final index = player.currentLyricIndex;
+    if (index < 0 || index >= player.lyrics.length) return;
+    if (!_lyricController.hasClients) return;
+
     const itemExtent = 46.0;
-    final target = player.currentLyricIndex * itemExtent;
-    if (_lyricController.hasClients) {
-      final max = _lyricController.position.maxScrollExtent;
-      final viewport = _lyricController.position.viewportDimension;
-      final offset = (target - viewport / 2 + itemExtent).clamp(0.0, max);
-      _lyricController.animateTo(
-        offset,
-        duration: const Duration(milliseconds: 340),
-        curve: Curves.easeOut,
-      );
-    }
+    const topPadding = 72.0;
+    final target = topPadding + index * itemExtent + itemExtent / 2;
+    final max = _lyricController.position.maxScrollExtent;
+    final viewport = _lyricController.position.viewportDimension;
+    final offset = (target - viewport / 2).clamp(0.0, max);
+
+    _lyricController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -82,7 +102,22 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _syncRotation(player.isPlaying);
-      _autoScrollLyrics(player);
+
+      // Switching tracks should start the lyric list from the top.
+      final songKey = player.currentSong?.uniqueKey;
+      if (songKey != _lastSongKey) {
+        _lastSongKey = songKey;
+        _lastLyricIndex = -1;
+        _userScrolling = false;
+        if (_lyricController.hasClients) {
+          _lyricController.jumpTo(0);
+        }
+      }
+
+      if (player.currentLyricIndex != _lastLyricIndex) {
+        _lastLyricIndex = player.currentLyricIndex;
+        _autoScrollLyrics(player);
+      }
     });
 
     final totalMs = player.duration.inMilliseconds;
@@ -113,7 +148,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
           SafeArea(
             child: Column(
               children: [
-                _topBar(context, song.artist),
+                _topBar(context, player),
                 const Spacer(flex: 2),
                 _cover(song.artwork),
                 const SizedBox(height: 26),
@@ -132,7 +167,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
     );
   }
 
-  Widget _topBar(BuildContext context, String artist) {
+  Widget _topBar(BuildContext context, PlayerState player) {
+    final artist = player.currentSong?.artist ?? '';
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
       child: Row(
@@ -164,13 +200,100 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.queue_music_rounded,
-                size: 24, color: AppColors.text),
-            onPressed: () => showQueueSheet(context),
+          GestureDetector(
+            onTap: () => _pickQuality(context, player),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Text(
+                player.quality.label,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.accent,
+                ),
+              ),
+            ),
           ),
+          const SizedBox(width: 8),
         ],
       ),
+    );
+  }
+
+  void _pickQuality(BuildContext context, PlayerState player) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.text3,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '播放音质',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                ),
+              ),
+              for (final option in AudioQuality.values)
+                ListTile(
+                  leading: Icon(
+                    option == player.quality
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 19,
+                    color: option == player.quality
+                        ? AppColors.accent
+                        : AppColors.text3,
+                  ),
+                  title: Text(
+                    option.label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: option == player.quality
+                          ? AppColors.accent
+                          : AppColors.text,
+                    ),
+                  ),
+                  subtitle: Text(
+                    option.description,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.text2),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    player.setQuality(option);
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -270,32 +393,35 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
         stops: [0.0, 0.2, 0.8, 1.0],
       ).createShader(rect),
       blendMode: BlendMode.dstIn,
-      child: ListView.builder(
-        controller: _lyricController,
-        padding: const EdgeInsets.symmetric(vertical: 72),
-        itemExtent: 46,
-        itemCount: player.lyrics.length,
-        itemBuilder: (context, index) {
-          final active = index == player.currentLyricIndex;
-          return GestureDetector(
-            onTap: () => player.seekToLyric(index),
-            child: Center(
-              child: Text(
-                player.lyrics[index].text,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: active ? 17 : 13.5,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                  color: active
-                      ? Colors.white
-                      : (index < player.currentLyricIndex
-                          ? const Color(0xFF8890A0)
-                          : const Color(0xFF5D6472)),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onLyricScroll,
+        child: ListView.builder(
+          controller: _lyricController,
+          padding: const EdgeInsets.symmetric(vertical: 72),
+          itemExtent: 46,
+          itemCount: player.lyrics.length,
+          itemBuilder: (context, index) {
+            final active = index == player.currentLyricIndex;
+            return GestureDetector(
+              onTap: () => player.seekToLyric(index),
+              child: Center(
+                child: Text(
+                  player.lyrics[index].text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: active ? 17 : 13.5,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                    color: active
+                        ? Colors.white
+                        : (index < player.currentLyricIndex
+                            ? const Color(0xFF8890A0)
+                            : const Color(0xFF5D6472)),
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

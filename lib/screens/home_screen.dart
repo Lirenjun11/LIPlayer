@@ -14,7 +14,6 @@ import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/cover_image.dart';
-import '../widgets/mini_player.dart';
 import '../widgets/platform_picker.dart';
 import '../widgets/queue_sheet.dart';
 import '../widgets/song_tile.dart';
@@ -38,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
   int _mineSection = 0;
   int _bannerIndex = 0;
+  bool _searchOpen = false;
 
   List<MusicPlatform> _platforms = [];
   String _currentPlatform = '';
@@ -259,10 +259,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSearch() {
-    setState(() => _tab = 1);
+    setState(() {
+      _tab = 0;
+      _searchOpen = true;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
     });
+  }
+
+  void _closeSearch() {
+    _searchFocus.unfocus();
+    setState(() => _searchOpen = false);
+  }
+
+  void _openPlayer() {
+    final player = context.read<PlayerState>();
+    if (player.currentSong == null) {
+      _toast('还没有播放中的歌曲');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FullPlayerScreen()),
+    );
   }
 
   // ---- Derived data --------------------------------------------------------
@@ -288,33 +307,17 @@ class _HomeScreenState extends State<HomeScreen> {
         bottom: false,
         child: _body(),
       ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const MiniPlayer(),
-          _bottomNav(),
-        ],
-      ),
+      bottomNavigationBar: _bottomNav(),
     );
   }
 
   Widget _body() {
-    switch (_tab) {
-      case 0:
-        return _discoverTab();
-      case 1:
-        return _searchTab();
-      default:
-        return _mineTab();
-    }
+    if (_searchOpen) return _searchTab();
+    return _tab == 2 ? _mineTab() : _discoverTab();
   }
 
   Widget _bottomNav() {
-    final items = [
-      (Icons.explore_outlined, Icons.explore, '发现'),
-      (Icons.search_outlined, Icons.search, '搜索'),
-      (Icons.person_outline, Icons.person, '我的'),
-    ];
+    final player = context.watch<PlayerState>();
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.bg,
@@ -323,41 +326,84 @@ class _HomeScreenState extends State<HomeScreen> {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 54,
+          height: 56,
           child: Row(
             children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _tab = i),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _tab == i ? items[i].$2 : items[i].$1,
-                          size: 24,
-                          color:
-                              _tab == i ? AppColors.accent : AppColors.text3,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          items[i].$3,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: _tab == i
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color:
-                                _tab == i ? AppColors.accent : AppColors.text3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              _navItem(0, Icons.explore_outlined, Icons.explore, '发现'),
+              Expanded(child: _playerEntry(player)),
+              _navItem(2, Icons.person_outline, Icons.person, '我的'),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _navItem(int index, IconData icon, IconData activeIcon, String label) {
+    // The search page is reachable from 发现, so keep that tab highlighted.
+    final selected = _tab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() {
+          _tab = index;
+          _searchOpen = false;
+        }),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              selected ? activeIcon : icon,
+              size: 23,
+              color: selected ? AppColors.accent : AppColors.text3,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? AppColors.accent : AppColors.text3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Centre entry that opens the full player; replaces the old mini player.
+  Widget _playerEntry(PlayerState player) {
+    final hasSong = player.currentSong != null;
+    return InkWell(
+      onTap: _openPlayer,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: hasSong ? kAccentGradient : null,
+              color: hasSong ? null : AppColors.bgCard2,
+              shape: BoxShape.circle,
+              boxShadow: hasSong
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x4DFF4D6D),
+                        blurRadius: 14,
+                        offset: Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              hasSong ? Icons.graphic_eq : Icons.play_arrow_rounded,
+              size: 19,
+              color: hasSong ? Colors.white : AppColors.text3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -682,9 +728,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+          padding: const EdgeInsets.fromLTRB(2, 14, 16, 6),
           child: Row(
             children: [
+              IconButton(
+                tooltip: '返回发现',
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    size: 18, color: AppColors.text),
+                onPressed: _closeSearch,
+              ),
               Expanded(
                 child: Container(
                   height: 42,

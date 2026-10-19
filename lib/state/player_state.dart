@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/audio_quality.dart';
 import '../models/lyric_line.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
@@ -24,6 +25,7 @@ extension PlayModeLabel on PlayMode {
 /// (queue management, play modes, lyrics sync, session persistence).
 class PlayerState extends ChangeNotifier {
   static const String _stateKey = 'music_player_state';
+  static const String _qualityKey = 'music_player_quality';
 
   final ApiService api;
   final AudioPlayer _player = AudioPlayer();
@@ -39,6 +41,7 @@ class PlayerState extends ChangeNotifier {
   bool isPlaying = false;
   bool isLoadingUrl = false;
   PlayMode playMode = PlayMode.order;
+  AudioQuality quality = AudioQuality.standard;
 
   Duration position = Duration.zero;
   Duration duration = Duration.zero;
@@ -220,15 +223,6 @@ class PlayerState extends ChangeNotifier {
 
     final song = currentSong!;
     try {
-      final url = await api.fetchPlayUrl(
-        song.platform,
-        song.id,
-        song.title,
-        song.artist,
-      );
-      if (token != _playToken) return;
-      if (url.isEmpty) throw ApiException('获取播放地址失败');
-
       final mediaItem = MediaItem(
         id: song.uniqueKey,
         title: song.title.isEmpty ? '未知歌曲' : song.title,
@@ -236,8 +230,9 @@ class PlayerState extends ChangeNotifier {
         album: song.album.isEmpty ? null : song.album,
         artUri: song.artwork.isNotEmpty ? Uri.parse(song.artwork) : null,
       );
-      final usedUrl = await _loadSourceWithFallback(url, mediaItem);
+      final usedUrl = await _loadBestSource(song, mediaItem, token);
       if (token != _playToken) return;
+      if (usedUrl == null) throw ApiException('获取播放地址失败');
       song.playUrl = usedUrl;
       if (restoreSeek != null && restoreSeek > Duration.zero) {
         try {
@@ -260,6 +255,45 @@ class PlayerState extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Resolves a playable source, stepping down one quality tier at a time
+  /// (lossless -> high -> standard) when the current tier cannot be played.
+  /// The user's chosen quality is left untouched.
+  Future<String?> _loadBestSource(Song song, MediaItem tag, int token) async {
+    final ladder = <AudioQuality>[];
+    for (var i = quality.index; i >= 0; i--) {
+      ladder.add(AudioQuality.values[i]);
+    }
+
+    for (final tier in ladder) {
+      if (token != _playToken) return null;
+      String url;
+      try {
+        url = await api.fetchPlayUrl(
+          song.platform,
+          song.id,
+          song.title,
+          song.artist,
+          quality: tier,
+        );
+      } catch (_) {
+        continue;
+      }
+      if (url.isEmpty) continue;
+
+      try {
+        final used = await _loadSourceWithFallback(url, tag);
+        if (token != _playToken) return null;
+        if (tier != quality) {
+          onError?.call('${quality.label}音源不可用，已自动降级为${tier.label}');
+        }
+        return used;
+      } catch (e) {
+        debugPrint('[player] ${tier.name} source failed: $e');
+      }
+    }
+    return null;
   }
 
   /// Loads [url] into the player. Some music CDNs serve HTTPS with
@@ -323,6 +357,22 @@ class PlayerState extends ChangeNotifier {
       if (idx >= playlist.length) idx = 0;
     }
     playAt(idx);
+  }
+
+  /// Switches playback quality and reloads the current track in place.
+  Future<void> setQuality(AudioQuality next) async {
+    if (quality == next) return;
+    quality = next;
+    _saveState();
+    // Stored separately so clearing the queue does not drop the preference.
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString(_qualityKey, next.name));
+    notifyListeners();
+    onError?.call('音质已切换为「${next.label}」');
+    if (currentSong != null && _hasSource) {
+      _pendingSeek = position;
+      await playAt(currentIndex);
+    }
   }
 
   void togglePlayMode() {
@@ -442,6 +492,7 @@ class PlayerState extends ChangeNotifier {
           'playlist': playlist.map((s) => s.toJson()).toList(),
           'currentIndex': currentIndex,
           'playMode': playMode.name,
+          'quality': quality.name,
           'positionMs': position.inMilliseconds,
           'durationMs': duration.inMilliseconds,
         }),
@@ -452,8 +503,21 @@ class PlayerState extends ChangeNotifier {
   Future<void> restoreState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Quality is restored even when there is no saved queue.
+      final savedQuality = prefs.getString(_qualityKey);
+      if (savedQuality != null && savedQuality.isNotEmpty) {
+        quality = AudioQuality.values.firstWhere(
+          (q) => q.name == savedQuality,
+          orElse: () => AudioQuality.standard,
+        );
+      }
+
       final raw = prefs.getString(_stateKey);
-      if (raw == null || raw.isEmpty) return;
+      if (raw == null || raw.isEmpty) {
+        notifyListeners();
+        return;
+      }
       final data = jsonDecode(raw) as Map<String, dynamic>;
       final list = (data['playlist'] as List? ?? [])
           .whereType<Map<String, dynamic>>()
@@ -466,6 +530,13 @@ class PlayerState extends ChangeNotifier {
         (m) => m.name == data['playMode'],
         orElse: () => PlayMode.order,
       );
+      // Backward compatibility with the older combined payload.
+      if (savedQuality == null || savedQuality.isEmpty) {
+        quality = AudioQuality.values.firstWhere(
+          (q) => q.name == data['quality'],
+          orElse: () => AudioQuality.standard,
+        );
+      }
       if (currentIndex < 0 || currentIndex >= playlist.length) {
         currentIndex = -1;
       } else {

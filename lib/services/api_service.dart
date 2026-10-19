@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/audio_quality.dart';
 import '../models/lyric_line.dart';
 import '../models/music_collection.dart';
 import '../models/music_platform.dart';
@@ -254,12 +255,40 @@ class ApiService {
         .toList();
   }
 
+  /// Resolves a stream URL. Plugins disagree on the accepted `quality`
+  /// values, so each tier walks its fallback chain. For lossless tiers we
+  /// keep looking while the plugin silently downgrades to MP3.
   Future<String> fetchPlayUrl(
-      String platform, String id, String title, String artist) async {
+    String platform,
+    String id,
+    String title,
+    String artist, {
+    AudioQuality quality = AudioQuality.standard,
+  }) async {
+    String? downgraded;
+    for (final value in quality.candidates) {
+      String url;
+      try {
+        url = await _requestPlayUrl(platform, id, title, artist, value);
+      } catch (_) {
+        continue;
+      }
+      if (url.isEmpty) continue;
+      if (quality == AudioQuality.lossless && !_isLossless(url)) {
+        downgraded ??= url;
+        continue;
+      }
+      return url;
+    }
+    return quality == AudioQuality.lossless ? (downgraded ?? '') : '';
+  }
+
+  Future<String> _requestPlayUrl(
+      String platform, String id, String title, String artist, String quality) async {
     final data = await _get('api/external/play-url', {
       'platform': platform,
       'id': id,
-      'quality': 'standard',
+      'quality': quality,
       'title': title,
       'artist': artist,
     });
@@ -269,6 +298,14 @@ class ApiService {
       return '${data['url']}'.trim();
     }
     return '';
+  }
+
+  bool _isLossless(String url) {
+    final path = url.toLowerCase().split('?').first;
+    return path.endsWith('.flac') ||
+        path.endsWith('.wav') ||
+        path.endsWith('.ape') ||
+        path.endsWith('.alac');
   }
 
   Future<Map<String, dynamic>> fetchSongDetail(
