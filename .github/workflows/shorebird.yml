@@ -84,15 +84,24 @@ jobs:
         if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
         run: shorebird release ios --no-codesign
 
-      - name: Upload release artifacts
+      # 安装只需要 IPA；dSYM 单独上传，避免下载包里混入几十兆符号文件。
+      - name: Upload IPA
         if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: shorebird-release-ipa
-          path: |
-            build/ios/ipa/*.ipa
-            build/ios/archive/*.xcarchive
+          name: shorebird-ipa
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload dSYM (optional)
+        if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorebird-dsym
+          path: build/ios/archive/*.xcarchive
           if-no-files-found: ignore
+          retention-days: 7
 
       # ---------- 热更新补丁 ----------
       - name: Shorebird patch

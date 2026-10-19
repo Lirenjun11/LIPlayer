@@ -14,6 +14,10 @@ on:
       - master
     tags:
       - 'v*'
+    paths-ignore:
+      # 只改文档或工作流时不必重新打包
+      - '**.md'
+      - '.github/**'
 
 concurrency:
   group: ios-ipa-${{ github.ref }}
