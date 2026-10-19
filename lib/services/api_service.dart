@@ -264,7 +264,9 @@ class ApiService {
       'artist': artist,
     });
     if (data is Map && data['url'] != null) {
-      return Song.normalizeUrl('${data['url']}');
+      // Keep the scheme returned by the backend: some CDNs serve HTTPS with
+      // certificates iOS rejects (-1202), while plain HTTP works.
+      return '${data['url']}'.trim();
     }
     return '';
   }

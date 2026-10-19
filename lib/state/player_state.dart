@@ -228,19 +228,17 @@ class PlayerState extends ChangeNotifier {
       );
       if (token != _playToken) return;
       if (url.isEmpty) throw ApiException('获取播放地址失败');
-      song.playUrl = url;
 
-      await _player.setAudioSource(AudioSource.uri(
-        Uri.parse(url),
-        tag: MediaItem(
-          id: song.uniqueKey,
-          title: song.title.isEmpty ? '未知歌曲' : song.title,
-          artist: song.artist,
-          album: song.album.isEmpty ? null : song.album,
-          artUri: song.artwork.isNotEmpty ? Uri.parse(song.artwork) : null,
-        ),
-      ));
+      final mediaItem = MediaItem(
+        id: song.uniqueKey,
+        title: song.title.isEmpty ? '未知歌曲' : song.title,
+        artist: song.artist,
+        album: song.album.isEmpty ? null : song.album,
+        artUri: song.artwork.isNotEmpty ? Uri.parse(song.artwork) : null,
+      );
+      final usedUrl = await _loadSourceWithFallback(url, mediaItem);
       if (token != _playToken) return;
+      song.playUrl = usedUrl;
       if (restoreSeek != null && restoreSeek > Duration.zero) {
         try {
           await _player.seek(restoreSeek);
@@ -262,6 +260,33 @@ class PlayerState extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Loads [url] into the player. Some music CDNs serve HTTPS with
+  /// certificates iOS refuses to trust (error -1202), while plain HTTP from
+  /// the same host works, so fall back to the other scheme before giving up.
+  Future<String> _loadSourceWithFallback(String url, MediaItem tag) async {
+    final candidates = <String>[url];
+    if (url.startsWith('https://')) {
+      candidates.add(url.replaceFirst('https://', 'http://'));
+    } else if (url.startsWith('http://')) {
+      candidates.add(url.replaceFirst('http://', 'https://'));
+    }
+
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        await _player.setAudioSource(
+          AudioSource.uri(Uri.parse(candidate), tag: tag),
+        );
+        return candidate;
+      } catch (e) {
+        lastError = e;
+        debugPrint('[player] source failed: $candidate ($e)');
+      }
+    }
+    if (lastError != null) throw lastError;
+    throw ApiException('播放地址不可用');
   }
 
   void togglePlay() {
