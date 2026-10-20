@@ -8,12 +8,9 @@ on:
         type: choice
         options: [release, debug]
         default: release
-  # 日常提交不再打完整包（macOS 分钟数按 10 倍计费）：
-  # - 代码改动 → 由 Shorebird 自动推补丁
-  # - 需要完整 IPA 时 → 手动 Run workflow，或打 v* 标签
-  push:
-    tags:
-      - 'v*'
+  # 只在手动触发时打完整包。
+  # - 日常代码改动 → Shorebird 自动推补丁
+  # - 打 v* 标签 → 由 Shorebird 的 release 流程产出 IPA（避免重复打包）
 
 concurrency:
   group: ios-ipa-${{ github.ref }}
