@@ -67,6 +67,10 @@ class PlayerState extends ChangeNotifier {
   Duration? _pendingSeek;
   DateTime _lastSavedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// Resolved stream URLs keyed by `song.uniqueKey`. Kept so the transition to
+  /// the next track (including from the iOS lock screen) needs no network.
+  final Map<String, String> _urlCache = {};
+
   void _wireStreams() {
     _player.playerStateStream.listen((state) {
       final wasPlaying = isPlaying;
@@ -279,6 +283,7 @@ class PlayerState extends ChangeNotifier {
       _recordRecent(song);
       _fetchLyric(song, token);
       unawaited(_fetchSongDetail(song, token));
+      _prefetchNext();
       _saveState();
     } on ApiException catch (e) {
       if (token == _playToken) onError?.call(e.message);
@@ -296,6 +301,17 @@ class PlayerState extends ChangeNotifier {
   /// (lossless -> high -> standard) when the current tier cannot be played.
   /// The user's chosen quality is left untouched.
   Future<String?> _loadBestSource(Song song, MediaItem tag, int token) async {
+    // Prefetched URL first: instant track changes, and it keeps working when
+    // iOS suspends the app right after the previous track ends.
+    final cached = _urlCache[song.uniqueKey];
+    if (cached != null && cached.isNotEmpty) {
+      try {
+        return await _loadSourceWithFallback(cached, tag);
+      } catch (_) {
+        _urlCache.remove(song.uniqueKey);
+      }
+    }
+
     final ladder = <AudioQuality>[];
     for (var i = quality.index; i >= 0; i--) {
       ladder.add(AudioQuality.values[i]);
@@ -379,6 +395,29 @@ class PlayerState extends ChangeNotifier {
 
   void next() => autoNext();
 
+  /// Warms the URL of the upcoming track so the next transition does not
+  /// depend on a network round trip (important on the iOS lock screen).
+  void _prefetchNext() {
+    if (playlist.length < 2) return;
+    final nextIndex = (currentIndex + 1) % playlist.length;
+    if (nextIndex == currentIndex) return;
+    final next = playlist[nextIndex];
+    if (_urlCache.containsKey(next.uniqueKey)) return;
+    unawaited(() async {
+      try {
+        final url = await api.fetchPlayUrl(
+          next.platform,
+          next.id,
+          next.title,
+          next.artist,
+          quality: quality,
+          source: next.source,
+        );
+        if (url.isNotEmpty) _urlCache[next.uniqueKey] = url;
+      } catch (_) {}
+    }());
+  }
+
   void autoNext() {
     if (playlist.isEmpty) return;
     if (playMode == PlayMode.single) {
@@ -399,6 +438,8 @@ class PlayerState extends ChangeNotifier {
   Future<void> setQuality(AudioQuality next) async {
     if (quality == next) return;
     quality = next;
+    // Cached URLs belong to the previous quality tier.
+    _urlCache.clear();
     _saveState();
     // Stored separately so clearing the queue does not drop the preference.
     SharedPreferences.getInstance()
