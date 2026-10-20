@@ -1,7 +1,7 @@
 name: musicplayer
 description: Cross-platform (iOS/Android) music player with login, ported from the MusicFree Vue page.
 publish_to: "none"
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -20,6 +20,9 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_windows_audio: ^1.0.9
   cached_network_image: ^3.4.1
+  # In-app download of the latest IPA + hand-off to TrollStore / Files.
+  path_provider: ^2.1.6
+  share_plus: ^13.3.1
 
 dev_dependencies:
   flutter_test:

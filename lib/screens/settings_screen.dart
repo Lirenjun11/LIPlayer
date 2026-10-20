@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/audio_quality.dart';
+import '../services/release_service.dart';
 import '../models/music_platform.dart';
 import '../services/api_service.dart';
 import '../state/app_settings.dart';
@@ -37,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _platform = widget.currentPlatform;
   int _limit = DailyRecommendScreen.defaultLimit;
   bool _syncing = false;
+  bool _downloading = false;
 
   @override
   void initState() {
@@ -50,6 +55,146 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ---- Actions -------------------------------------------------------------
+
+  /// Downloads the newest release IPA and hands it to another app.
+  ///
+  /// iOS does not allow an app to install an IPA by itself, so the file is
+  /// shared through the system sheet (TrollStore / Files).
+  Future<void> _downloadLatest() async {
+    setState(() => _downloading = true);
+    final service = ReleaseService();
+    final asset = await service.fetchLatest();
+    if (!mounted) return;
+    setState(() => _downloading = false);
+
+    if (asset == null) {
+      AppToast.show(context, '获取安装包失败，请检查网络或稍后重试');
+      return;
+    }
+
+    final progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          title: Text(
+            '正在下载安装包',
+            style: TextStyle(fontSize: 15, color: AppColors.text),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<double>(
+                valueListenable: progress,
+                builder: (_, value, __) => ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: value == 0 ? null : value,
+                    minHeight: 6,
+                    backgroundColor: AppColors.bgCard2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.accent),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder<double>(
+                valueListenable: progress,
+                builder: (_, value, __) => Text(
+                  '${(value * 100).toStringAsFixed(0)}% · '
+                  '${asset.sizeMb.toStringAsFixed(1)} MB',
+                  style: TextStyle(fontSize: 11, color: AppColors.text2),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      final file = await service.download(
+        asset,
+        onProgress: (value) => progress.value = value,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      progress.dispose();
+      _showInstallOptions(file);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      progress.dispose();
+      AppToast.show(context, '下载失败：$e');
+    }
+  }
+
+  void _showInstallOptions(File file) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.text3,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '安装包已下载',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+                child: Text(
+                  'iOS 不允许 App 直接安装 IPA，请用 TrollStore 或「文件」打开',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: AppColors.text2),
+                ),
+              ),
+              ListTile(
+                title: Text('用其他程序打开',
+                    style: TextStyle(fontSize: 14, color: AppColors.text)),
+                subtitle: Text('选择 TrollStore / 存储到文件',
+                    style: TextStyle(fontSize: 11, color: AppColors.text2)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await SharePlus.instance.share(
+                    ShareParams(files: [XFile(file.path)]),
+                  );
+                },
+              ),
+              ListTile(
+                title: Text('关闭',
+                    style: TextStyle(fontSize: 14, color: AppColors.text2)),
+                onTap: () => Navigator.of(ctx).pop(),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _pickTheme() async {
     final settings = context.read<AppSettings>();
@@ -369,6 +514,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontSize: 11, color: AppColors.text3),
               ),
             ),
+          _sectionTitle('安装包'),
+          _card([
+            _row(
+              title: '下载最新安装包',
+              value: _downloading ? '获取中…' : 'GitHub Releases',
+              onTap: _downloading ? null : _downloadLatest,
+            ),
+          ]),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+            child: Text(
+              '下载后通过 TrollStore / 文件 安装；iOS 不允许 App 自行安装 IPA',
+              style: TextStyle(fontSize: 11, color: AppColors.text3),
+            ),
+          ),
           _sectionTitle('账户'),
           _card([
             _row(

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/audio_quality.dart';
 import '../models/lyric_line.dart';
+import '../models/music_platform.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
 
@@ -58,6 +59,10 @@ class PlayerState extends ChangeNotifier {
   /// Notifies the UI about transient errors (shown as a snackbar).
   void Function(String message)? onError;
 
+  /// Called when playback had to switch to another music source because the
+  /// current one disappeared, so the home page can follow along.
+  void Function(String platform)? onPlatformChanged;
+
   int _playToken = 0;
   int _lyricToken = 0;
   bool _handlingCompletion = false;
@@ -71,6 +76,25 @@ class PlayerState extends ChangeNotifier {
   /// the next track (including from the iOS lock screen) needs no network.
   final Map<String, String> _urlCache = {};
 
+  /// Decoded lengths reported by the audio engine, keyed by `song.uniqueKey`.
+  final Map<String, Duration> _actualDurations = {};
+
+  /// Playlist indices currently loaded into the engine (prev..next window),
+  /// and the position of the playing track inside that window.
+  List<int> _windowIndexes = [];
+  int _windowCurrent = 0;
+  bool _rebuilding = false;
+
+  /// Songs that already failed to resolve in this session; used to stop the
+  /// auto-skip loop once the whole queue has been tried.
+  final Set<String> _failedKeys = {};
+  int _consecutiveFailures = 0;
+  bool _disposed = false;
+
+  /// Cached platform list used to detect a dead music source.
+  List<MusicPlatform>? _platformsSnapshot;
+  DateTime _platformsFetchedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   void _wireStreams() {
     _player.playerStateStream.listen((state) {
       final wasPlaying = isPlaying;
@@ -78,7 +102,8 @@ class PlayerState extends ChangeNotifier {
       // Flush the queue and position when playback pauses or stops.
       if (wasPlaying && !isPlaying) _saveState();
       if (state.processingState == ProcessingState.completed &&
-          !_handlingCompletion) {
+          !_handlingCompletion &&
+          !_rebuilding) {
         _handlingCompletion = true;
         autoNext();
         Future.delayed(const Duration(milliseconds: 300), () {
@@ -87,6 +112,9 @@ class PlayerState extends ChangeNotifier {
       }
       notifyListeners();
     });
+
+    // Native transitions (auto-advance, lock-screen / headset skip).
+    _player.currentIndexStream.listen(_onPlayerIndexChanged);
 
     _player.positionStream.listen((p) {
       position = p;
@@ -103,9 +131,19 @@ class PlayerState extends ChangeNotifier {
 
     _player.durationStream.listen((d) {
       duration = d ?? Duration.zero;
+      // Remember the real decoded length: the metadata duration from the API
+      // is often rounded or plainly wrong.
+      final key = currentSong?.uniqueKey;
+      if (key != null && duration > Duration.zero) {
+        _actualDurations[key] = duration;
+      }
       notifyListeners();
     });
   }
+
+  /// Real duration once the track has been decoded, metadata before that.
+  Duration durationOf(Song song) =>
+      _actualDurations[song.uniqueKey] ?? song.durationValue;
 
   bool get hasCurrent => currentSong != null;
 
@@ -153,6 +191,8 @@ class PlayerState extends ChangeNotifier {
       if (index < currentIndex) currentIndex--;
       _saveState();
       notifyListeners();
+      // The removed track may sit inside the engine's window.
+      unawaited(_refreshWindow());
     }
   }
 
@@ -161,6 +201,8 @@ class PlayerState extends ChangeNotifier {
     currentIndex = -1;
     currentSong = null;
     lyrics = const [];
+    _windowIndexes = [];
+    _windowCurrent = 0;
     _hasSource = false;
     _player.stop();
     SharedPreferences.getInstance().then((p) => p.remove(_stateKey));
@@ -197,6 +239,8 @@ class PlayerState extends ChangeNotifier {
     playlist.addAll(added);
     _saveState();
     notifyListeners();
+    // Fill the window when the queue was previously exhausted.
+    unawaited(_maybeExtendWindow());
     return added.length;
   }
 
@@ -245,48 +289,129 @@ class PlayerState extends ChangeNotifier {
 
   // ---- Playback ------------------------------------------------------------
 
-  Future<void> playAt(int index) async {
-    if (index < 0 || index >= playlist.length) return;
-    // Only the restored track resumes from the saved position.
-    final restoreSeek = index == currentIndex ? _pendingSeek : null;
-    _pendingSeek = null;
-    final token = ++_playToken;
-    currentIndex = index;
-    currentSong = playlist[index];
-    lyrics = const [];
-    lyricsLoading = true;
-    currentLyricIndex = -1;
-    isLoadingUrl = true;
-    notifyListeners();
-
-    final song = currentSong!;
-    try {
-      final mediaItem = MediaItem(
+  MediaItem _mediaItem(Song song) => MediaItem(
         id: song.uniqueKey,
         title: song.title.isEmpty ? '未知歌曲' : song.title,
         artist: song.artist,
         album: song.album.isEmpty ? null : song.album,
         artUri: song.artwork.isNotEmpty ? Uri.parse(song.artwork) : null,
       );
-      final usedUrl = await _loadBestSource(song, mediaItem, token);
-      if (token != _playToken) return;
-      if (usedUrl == null) throw ApiException('获取播放地址失败');
-      song.playUrl = usedUrl;
-      if (restoreSeek != null && restoreSeek > Duration.zero) {
-        try {
-          await _player.seek(restoreSeek);
-          position = restoreSeek;
-        } catch (_) {}
+
+  /// Resolves a stream URL (cached when possible). `strict` walks the quality
+  /// ladder down so the current track still plays when its tier is unavailable.
+  Future<String?> _resolveUrl(Song song, int token,
+      {bool strict = false}) async {
+    final cached = _urlCache[song.uniqueKey];
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    final tiers = <AudioQuality>[quality];
+    if (strict) {
+      for (var i = quality.index - 1; i >= 0; i--) {
+        tiers.add(AudioQuality.values[i]);
       }
-      _hasSource = true;
+    }
+
+    for (final tier in tiers) {
+      if (token != _playToken) return null;
+      try {
+        final url = await api.fetchPlayUrl(
+          song.platform,
+          song.id,
+          song.title,
+          song.artist,
+          quality: tier,
+          source: song.source,
+        );
+        if (url.isEmpty) continue;
+        _urlCache[song.uniqueKey] = url;
+        if (strict && tier != quality) {
+          onError?.call('${quality.label}音源不可用，已自动降级为${tier.label}');
+        }
+        return url;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// Hands a (prev..next) window to the audio engine as a native playlist.
+  /// Neighbours in the playlist are what make the iOS lock-screen skip buttons
+  /// appear and let playback continue while the app is suspended.
+  Future<bool> _loadWindow(int index, int token,
+      {Duration initialPosition = Duration.zero}) async {
+    const radius = 2;
+    final start = (index - radius).clamp(0, playlist.length - 1);
+    final end = (index + radius).clamp(0, playlist.length - 1);
+
+    final sources = <AudioSource>[];
+    final indexes = <int>[];
+    var currentPos = -1;
+
+    for (var i = start; i <= end; i++) {
+      final song = playlist[i];
+      final isCurrent = i == index;
+      final url = await _resolveUrl(song, token, strict: isCurrent);
+      if (token != _playToken) return false;
+      if (url == null || url.isEmpty) {
+        if (isCurrent) return false;
+        continue;
+      }
+      if (isCurrent) currentPos = sources.length;
+      sources.add(AudioSource.uri(Uri.parse(url), tag: _mediaItem(song)));
+      indexes.add(i);
+    }
+
+    if (currentPos < 0 || sources.isEmpty) return false;
+
+    try {
+      await _player.setAudioSources(
+        sources,
+        initialIndex: currentPos,
+        initialPosition: initialPosition,
+      );
+    } catch (e) {
+      debugPrint('[player] window load failed: $e');
+      return false;
+    }
+    _windowIndexes = indexes;
+    _windowCurrent = currentPos;
+    _hasSource = true;
+    return true;
+  }
+
+  Future<void> playAt(int index) async {
+    if (index < 0 || index >= playlist.length) return;
+    // Only the restored track resumes from the saved position.
+    final restoreSeek = index == currentIndex ? _pendingSeek : null;
+    _pendingSeek = null;
+    final token = ++_playToken;
+
+    currentIndex = index;
+    currentSong = playlist[index];
+    lyrics = const [];
+    lyricsLoading = true;
+    currentLyricIndex = -1;
+    position = restoreSeek ?? Duration.zero;
+    duration =
+        _actualDurations[currentSong!.uniqueKey] ?? currentSong!.durationValue;
+    isLoadingUrl = true;
+    notifyListeners();
+
+    try {
+      final ok = await _loadWindow(index, token,
+          initialPosition: restoreSeek ?? Duration.zero);
+      if (token != _playToken) return;
+      if (!ok) {
+        _hasSource = false;
+        _handlePlayFailure(currentSong!, token);
+        return;
+      }
+      _failedKeys.clear();
+      _consecutiveFailures = 0;
       unawaited(_player.play());
-      _recordRecent(song);
-      _fetchLyric(song, token);
-      unawaited(_fetchSongDetail(song, token));
-      _prefetchNext();
+      _recordRecent(currentSong!);
+      _fetchLyric(currentSong!, token);
+      unawaited(_fetchSongDetail(currentSong!, token));
       _saveState();
-    } on ApiException catch (e) {
-      if (token == _playToken) onError?.call(e.message);
     } catch (e) {
       if (token == _playToken) onError?.call('播放失败: $e');
     } finally {
@@ -297,82 +422,206 @@ class PlayerState extends ChangeNotifier {
     }
   }
 
-  /// Resolves a playable source, stepping down one quality tier at a time
-  /// (lossless -> high -> standard) when the current tier cannot be played.
-  /// The user's chosen quality is left untouched.
-  Future<String?> _loadBestSource(Song song, MediaItem tag, int token) async {
-    // Prefetched URL first: instant track changes, and it keeps working when
-    // iOS suspends the app right after the previous track ends.
-    final cached = _urlCache[song.uniqueKey];
-    if (cached != null && cached.isNotEmpty) {
-      try {
-        return await _loadSourceWithFallback(cached, tag);
-      } catch (_) {
-        _urlCache.remove(song.uniqueKey);
-      }
+  /// A track could not be resolved (dead source, removed song, network...).
+  /// Skip to the next one, but stop once every song has been tried so a dead
+  /// music source cannot put the app in an endless retry loop.
+  Future<void> _handlePlayFailure(Song song, int token) async {
+    _failedKeys.add(song.uniqueKey);
+    _consecutiveFailures++;
+    final total = playlist.length;
+
+    // A couple of failures in a row may mean the whole source disappeared.
+    if (_consecutiveFailures >= 2 && _consecutiveFailures <= 4) {
+      final healed = await _tryPlatformHeal(song, token);
+      if (_disposed || token != _playToken) return;
+      if (healed) return;
     }
 
-    final ladder = <AudioQuality>[];
-    for (var i = quality.index; i >= 0; i--) {
-      ladder.add(AudioQuality.values[i]);
+    if (total <= 1 || _failedKeys.length >= total) {
+      _failedKeys.clear();
+      _consecutiveFailures = 0;
+      onError?.call('播放失败：当前音乐源可能已失效，请切换音源');
+      notifyListeners();
+      return;
     }
 
-    for (final tier in ladder) {
-      if (token != _playToken) return null;
-      String url;
-      try {
-        url = await api.fetchPlayUrl(
-          song.platform,
-          song.id,
-          song.title,
-          song.artist,
-          quality: tier,
-          source: song.source,
-        );
-      } catch (_) {
-        continue;
-      }
-      if (url.isEmpty) continue;
+    if (playMode == PlayMode.single) {
+      onError?.call('《${song.title}》播放失败');
+      notifyListeners();
+      return;
+    }
 
+    onError?.call('《${song.title}》播放失败，已自动跳过');
+    final nextIndex = (currentIndex + 1) % total;
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (_disposed || token != _playToken) return;
+      playAt(nextIndex);
+    });
+  }
+
+  /// Detects a dead music source and moves the current track to a working one.
+  /// Returns true when playback was restarted with a substituted song.
+  Future<bool> _tryPlatformHeal(Song song, int token) async {
+    final platforms = await _availablePlatforms();
+    if (platforms.isEmpty) return false;
+    // Still advertised by the backend → treat as a per-track problem.
+    if (platforms.any((p) => p.platform == song.platform)) return false;
+
+    final target = platforms.first;
+    final replacement = await _remapSong(song);
+    if (_disposed || token != _playToken) return false;
+
+    if (replacement == null) {
+      onError?.call('「${target.platform}」可用，但未找到《${song.title}》');
+      return false;
+    }
+
+    final index = playlist.indexWhere((s) => s.uniqueKey == song.uniqueKey);
+    if (index < 0) return false;
+
+    playlist[index] = replacement;
+    _failedKeys.clear();
+    _consecutiveFailures = 0;
+    _saveState();
+    onPlatformChanged?.call(target.platform);
+    onError?.call('音乐源已失效，已切换到「${target.platform}」');
+    await playAt(index);
+    return true;
+  }
+
+  Future<List<MusicPlatform>> _availablePlatforms() async {
+    final fresh =
+        DateTime.now().difference(_platformsFetchedAt).inMinutes < 5;
+    if (fresh && _platformsSnapshot != null) return _platformsSnapshot!;
+    try {
+      final list = await api.fetchPlatforms();
+      _platformsSnapshot = list;
+      _platformsFetchedAt = DateTime.now();
+      return list;
+    } catch (_) {
+      return _platformsSnapshot ?? const [];
+    }
+  }
+
+  /// Finds the same track on another platform, rejecting covers/live versions
+  /// by comparing title, artist and length.
+  Future<Song?> _remapSong(Song song) async {
+    final platforms = await _availablePlatforms();
+    final others =
+        platforms.where((p) => p.platform != song.platform).toList();
+    if (others.isEmpty || song.title.trim().isEmpty) return null;
+
+    final query = '${song.title} ${song.artist}'.trim();
+    final wanted = song.durationValue.inMilliseconds;
+
+    for (final platform in others) {
       try {
-        final used = await _loadSourceWithFallback(url, tag);
-        if (token != _playToken) return null;
-        if (tier != quality) {
-          onError?.call('${quality.label}音源不可用，已自动降级为${tier.label}');
+        final result = await api.search(platform.platform, query, 1);
+        for (final candidate in result.items.take(12)) {
+          if (!_titleMatches(candidate.title, song.title)) continue;
+          if (!_artistMatches(candidate.artist, song.artist)) continue;
+          final length = candidate.durationValue.inMilliseconds;
+          if (wanted > 0 && length > 0 && (length - wanted).abs() > 15000) {
+            continue;
+          }
+          return candidate;
         }
-        return used;
-      } catch (e) {
-        debugPrint('[player] ${tier.name} source failed: $e');
-      }
+      } catch (_) {}
     }
     return null;
   }
 
-  /// Loads [url] into the player. Some music CDNs serve HTTPS with
-  /// certificates iOS refuses to trust (error -1202), while plain HTTP from
-  /// the same host works, so fall back to the other scheme before giving up.
-  Future<String> _loadSourceWithFallback(String url, MediaItem tag) async {
-    final candidates = <String>[url];
-    if (url.startsWith('https://')) {
-      candidates.add(url.replaceFirst('https://', 'http://'));
-    } else if (url.startsWith('http://')) {
-      candidates.add(url.replaceFirst('http://', 'https://'));
-    }
+  static String _normalize(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s\-_()（）\[\]【】·,，.。]'), '');
 
-    Object? lastError;
-    for (final candidate in candidates) {
-      try {
-        await _player.setAudioSource(
-          AudioSource.uri(Uri.parse(candidate), tag: tag),
-        );
-        return candidate;
-      } catch (e) {
-        lastError = e;
-        debugPrint('[player] source failed: $candidate ($e)');
+  static bool _titleMatches(String a, String b) {
+    final x = _normalize(a);
+    final y = _normalize(b);
+    if (x.isEmpty || y.isEmpty) return false;
+    return x.contains(y) || y.contains(x);
+  }
+
+  static bool _artistMatches(String a, String b) {
+    final split = RegExp(r'[、,，&/]');
+    final left = a
+        .split(split)
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty);
+    final right = b
+        .split(split)
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty);
+    for (final x in left) {
+      for (final y in right) {
+        if (x.contains(y) || y.contains(x)) return true;
       }
     }
-    if (lastError != null) throw lastError;
-    throw ApiException('播放地址不可用');
+    return false;
+  }
+
+  /// Keeps Dart state in sync when the engine advances by itself: automatic
+  /// track transitions and the lock-screen / headset skip buttons.
+  void _onPlayerIndexChanged(int? playerIndex) {
+    if (playerIndex == null) return;
+    if (playerIndex < 0 || playerIndex >= _windowIndexes.length) return;
+    if (playerIndex == _windowCurrent) return;
+    _windowCurrent = playerIndex;
+
+    final songIndex = _windowIndexes[playerIndex];
+    if (songIndex < 0 || songIndex >= playlist.length) return;
+    if (songIndex == currentIndex) return;
+
+    currentIndex = songIndex;
+    currentSong = playlist[songIndex];
+    position = Duration.zero;
+    duration =
+        _actualDurations[currentSong!.uniqueKey] ?? currentSong!.durationValue;
+    lyrics = const [];
+    lyricsLoading = true;
+    currentLyricIndex = -1;
+    notifyListeners();
+
+    _recordRecent(currentSong!);
+    _fetchLyric(currentSong!, _playToken);
+    unawaited(_fetchSongDetail(currentSong!, _playToken));
+    _saveState();
+    unawaited(_maybeExtendWindow());
+  }
+
+  /// Rebuilds the window once the current track reaches its edge, resuming at
+  /// the same position so the re-load is inaudible.
+  Future<void> _maybeExtendWindow() async {
+    if (!_hasSource || _rebuilding) return;
+    final pos = _windowIndexes.indexOf(currentIndex);
+    if (pos < 0) return;
+    if (pos > 0 && pos < _windowIndexes.length - 1) return;
+
+    _rebuilding = true;
+    try {
+      final token = _playToken;
+      final resume = position;
+      final ok = await _loadWindow(currentIndex, token, initialPosition: resume);
+      if (!ok || token != _playToken) return;
+      await _player.play();
+    } finally {
+      _rebuilding = false;
+    }
+  }
+
+  /// Rebuilds the window in place after the queue was edited.
+  Future<void> _refreshWindow() async {
+    if (!_hasSource || currentSong == null || _rebuilding) return;
+    _rebuilding = true;
+    try {
+      final token = _playToken;
+      final resume = position;
+      final ok = await _loadWindow(currentIndex, token, initialPosition: resume);
+      if (!ok || token != _playToken) return;
+      await _player.play();
+    } finally {
+      _rebuilding = false;
+    }
   }
 
   void togglePlay() {
@@ -386,36 +635,34 @@ class PlayerState extends ChangeNotifier {
     }
   }
 
-  void prev() {
+  Future<void> prev() async {
     if (playlist.isEmpty) return;
-    var idx = currentIndex - 1;
-    if (idx < 0) idx = playlist.length - 1;
-    playAt(idx);
+    final pos = _windowIndexes.indexOf(currentIndex);
+    if (pos > 0) {
+      await _player.seekToPrevious();
+      return;
+    }
+    final target = currentIndex - 1 < 0 ? playlist.length - 1 : currentIndex - 1;
+    await playAt(target);
   }
 
-  void next() => autoNext();
-
-  /// Warms the URL of the upcoming track so the next transition does not
-  /// depend on a network round trip (important on the iOS lock screen).
-  void _prefetchNext() {
-    if (playlist.length < 2) return;
-    final nextIndex = (currentIndex + 1) % playlist.length;
-    if (nextIndex == currentIndex) return;
-    final next = playlist[nextIndex];
-    if (_urlCache.containsKey(next.uniqueKey)) return;
-    unawaited(() async {
-      try {
-        final url = await api.fetchPlayUrl(
-          next.platform,
-          next.id,
-          next.title,
-          next.artist,
-          quality: quality,
-          source: next.source,
-        );
-        if (url.isNotEmpty) _urlCache[next.uniqueKey] = url;
-      } catch (_) {}
-    }());
+  Future<void> next() async {
+    if (playlist.isEmpty) return;
+    if (playMode == PlayMode.single) {
+      await playAt(currentIndex);
+      return;
+    }
+    if (playMode == PlayMode.random) {
+      autoNext();
+      return;
+    }
+    final pos = _windowIndexes.indexOf(currentIndex);
+    if (pos >= 0 && pos < _windowIndexes.length - 1) {
+      await _player.seekToNext();
+      return;
+    }
+    final target = currentIndex + 1 >= playlist.length ? 0 : currentIndex + 1;
+    await playAt(target);
   }
 
   void autoNext() {
@@ -649,6 +896,7 @@ class PlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _saveState();
     _player.dispose();
     super.dispose();

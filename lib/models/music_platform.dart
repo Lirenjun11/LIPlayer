@@ -5,6 +5,11 @@ class MusicPlatform {
 
   MusicPlatform({required this.platform, this.supportedSearchType = const []});
 
+  Map<String, dynamic> toJson() => {
+        'platform': platform,
+        'supportedSearchType': supportedSearchType,
+      };
+
   factory MusicPlatform.fromJson(Map<String, dynamic> json) {
     final rawTypes = json['supportedSearchType'];
     final types = <String>[];

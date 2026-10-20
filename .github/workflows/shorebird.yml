@@ -130,6 +130,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # App 内「下载最新安装包」读取这个 release。只保留最新一版。
+      - name: Publish latest release
+        if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ipa=$(ls build/ios/ipa/*.ipa | head -1)
+          cp "$ipa" build/ios/ipa/LIPlayer.ipa
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest build/ios/ipa/LIPlayer.ipa \
+            --title "LIPlayer 最新安装包" \
+            --notes "提交 ${GITHUB_SHA::7} · 构建于 $(date '+%Y-%m-%d %H:%M')"
+
       - name: Upload dSYM (optional)
         if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
         uses: actions/upload-artifact@v4

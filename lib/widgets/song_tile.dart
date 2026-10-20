@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/song.dart';
+import '../state/player_state.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import 'cover_image.dart';
@@ -69,9 +71,18 @@ class SongTile extends StatelessWidget {
             if (showDuration)
               Padding(
                 padding: const EdgeInsets.only(left: 6),
-                child: Text(
-                  formatRawDuration(song.duration),
-                  style: TextStyle(fontSize: 11, color: AppColors.text3),
+                child: Builder(
+                  builder: (context) {
+                    // Prefer the engine-reported length; fall back to metadata
+                    // until the track has been played at least once.
+                    final total = context.select<PlayerState, Duration>(
+                      (p) => p.durationOf(song),
+                    );
+                    return Text(
+                      formatDuration(total),
+                      style: TextStyle(fontSize: 11, color: AppColors.text3),
+                    );
+                  },
                 ),
               ),
             if (trailing != null) ...[

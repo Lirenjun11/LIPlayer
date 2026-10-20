@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -41,6 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _bannerTimer;
 
   static const String _platformKey = 'music_player_platform';
+  static const String _platformsCacheKey = 'music_platforms_cache';
+
+  String _discoveryCacheKey(String platform) => 'discovery_cache_$platform';
 
   int _tab = 0;
   int _mineSection = 0;
@@ -76,6 +80,20 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       AppToast.show(context, msg);
     };
+    // Playback may move to another source when the current one dies.
+    _player.onPlatformChanged = (platform) {
+      if (!mounted || platform.isEmpty || platform == _currentPlatform) return;
+      setState(() {
+        _currentPlatform = platform;
+        _toplistGroups = [];
+        _sheets = [];
+        _sheetsPage = 0;
+        _sheetsEnd = false;
+      });
+      SharedPreferences.getInstance()
+          .then((prefs) => prefs.setString(_platformKey, platform));
+      _loadDiscovery();
+    };
     _bannerTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       final items = _bannerItems;
       if (!mounted || !_bannerController.hasClients || items.length < 2) return;
@@ -88,7 +106,89 @@ class _HomeScreenState extends State<HomeScreen> {
     _discoverController.addListener(_onDiscoverScroll);
     _searchListController.addListener(_onSearchScroll);
     _refreshRecommendLimit();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initDiscovery());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Paint the last known content first, then refresh in the background.
+      await _restoreCachedState();
+      if (mounted) _initDiscovery();
+    });
+  }
+
+  /// Restores the platform list and the discover feed from disk so a cold
+  /// start shows content immediately instead of waiting for the network.
+  Future<void> _restoreCachedState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPlatform = prefs.getString(_platformKey) ?? '';
+
+      final rawPlatforms = prefs.getString(_platformsCacheKey);
+      if (rawPlatforms != null && rawPlatforms.isNotEmpty) {
+        final list = (jsonDecode(rawPlatforms) as List)
+            .whereType<Map<String, dynamic>>()
+            .map(MusicPlatform.fromJson)
+            .toList();
+        if (list.isNotEmpty && mounted) {
+          setState(() {
+            _platforms = list;
+            if (_currentPlatform.isEmpty) {
+              _currentPlatform = list.any((p) => p.platform == savedPlatform)
+                  ? savedPlatform
+                  : list.first.platform;
+            }
+          });
+        }
+      } else if (savedPlatform.isNotEmpty && mounted) {
+        setState(() => _currentPlatform = savedPlatform);
+      }
+
+      final rawDiscovery = prefs.getString(_discoveryCacheKey(_currentPlatform));
+      if (rawDiscovery == null || rawDiscovery.isEmpty) return;
+      final map = jsonDecode(rawDiscovery) as Map<String, dynamic>;
+      final groups = (map['toplists'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((g) => ToplistGroup(
+                title: '${g['title'] ?? ''}',
+                items: (g['items'] as List? ?? const [])
+                    .whereType<Map<String, dynamic>>()
+                    .map((e) => MusicCollection.fromJson(
+                          e,
+                          platform: _currentPlatform,
+                        ))
+                    .toList(),
+              ))
+          .toList();
+      final sheets = (map['sheets'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((e) =>
+              MusicCollection.fromJson(e, platform: _currentPlatform))
+          .toList();
+      if (!mounted) return;
+      if (groups.isNotEmpty || sheets.isNotEmpty) {
+        setState(() {
+          if (groups.isNotEmpty) _toplistGroups = groups;
+          if (sheets.isNotEmpty) _sheets = sheets;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveDiscoveryCache() async {
+    if (_currentPlatform.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _discoveryCacheKey(_currentPlatform),
+        jsonEncode({
+          'toplists': _toplistGroups
+              .map((g) => {
+                    'title': g.title,
+                    'items': g.items.map((c) => c.toJson()).toList(),
+                  })
+              .toList(),
+          'sheets': _sheets.take(30).map((c) => c.toJson()).toList(),
+          'ts': DateTime.now().millisecondsSinceEpoch,
+        }),
+      );
+    } catch (_) {}
   }
 
   Future<void> _refreshRecommendLimit() async {
@@ -159,6 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchFocus.dispose();
     _bannerController.dispose();
     _player.onError = null;
+    _player.onPlatformChanged = null;
     super.dispose();
   }
 
@@ -187,6 +288,11 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_currentPlatform.isNotEmpty) {
         await prefs.setString(_platformKey, _currentPlatform);
       }
+      // Cache the platform list so the next cold start is instant.
+      await prefs.setString(
+        _platformsCacheKey,
+        jsonEncode(platforms.map((p) => p.toJson()).toList()),
+      );
       await _loadDiscovery();
     } catch (e) {
       _toast('$e');
@@ -196,13 +302,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadDiscovery() async {
     if (_currentPlatform.isEmpty) return;
     await Future.wait([_loadToplists(), _loadSheets()]);
+    await _saveDiscoveryCache();
   }
 
   Future<void> _loadToplists() async {
     if (_currentPlatform.isEmpty) return;
     setState(() {
       _loadingToplists = true;
-      _toplistGroups = [];
+      // Keep whatever is on screen (cached data) until the refresh lands.
+      if (_toplistGroups.isEmpty) _toplistGroups = [];
     });
     try {
       final titles = await _api.fetchToplistGroups(_currentPlatform);
@@ -231,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final page = more ? _sheetsPage + 1 : 1;
     setState(() {
       _loadingSheets = true;
-      if (!more) _sheets = [];
+      if (!more && _sheets.isEmpty) _sheets = [];
     });
     try {
       final result = await _api.fetchSheets(_currentPlatform, page);
@@ -352,9 +460,16 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchResults = [];
       _searchEnd = false;
       _bannerIndex = 0;
+      // Switching source must not show the previous platform's content.
+      _toplistGroups = [];
+      _sheets = [];
+      _sheetsPage = 0;
+      _sheetsEnd = false;
     });
     SharedPreferences.getInstance()
         .then((prefs) => prefs.setString(_platformKey, platform.platform));
+    // Show this platform's cached feed immediately, then refresh.
+    _restoreCachedState();
     _loadDiscovery();
   }
 
@@ -762,9 +877,13 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(Icons.search, size: 18, color: AppColors.text3),
               SizedBox(width: 8),
-              Text(
-                '搜索歌曲、歌手、专辑',
-                style: TextStyle(fontSize: 13, color: AppColors.text3),
+              Expanded(
+                child: Text(
+                  '搜索歌曲、歌手、专辑',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: AppColors.text3),
+                ),
               ),
             ],
           ),
@@ -1219,14 +1338,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         GestureDetector(
                           onTap: () => setState(() => _tab = 0),
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                _currentPlatform.isEmpty
-                                    ? '去发现今日推荐'
-                                    : '$_currentPlatform · 去发现今日推荐',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xCCFFFFFF),
+                              Flexible(
+                                child: Text(
+                                  _currentPlatform.isEmpty
+                                      ? '去发现今日推荐'
+                                      : '$_currentPlatform · 去发现今日推荐',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xCCFFFFFF),
+                                  ),
                                 ),
                               ),
                               const Icon(Icons.chevron_right,

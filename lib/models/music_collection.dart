@@ -34,6 +34,16 @@ class MusicCollection {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'artwork': artwork,
+        'artist': artist,
+        'playCount': playCount,
+        'platform': platform,
+        'src': src,
+      };
+
   static int _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();

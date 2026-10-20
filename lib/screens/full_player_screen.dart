@@ -167,17 +167,23 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               fit: StackFit.expand,
               children: [
                 CoverImage(url: song.artwork),
-                const DecoratedBox(
+                DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xE60A0C12),
-                        Color(0xF507080C),
-                        Color(0xFF07080C),
-                      ],
-                      stops: [0.0, 0.55, 1.0],
+                      colors: AppColors.isDark
+                          ? const [
+                              Color(0xE60A0C12),
+                              Color(0xF507080C),
+                              Color(0xFF07080C),
+                            ]
+                          : const [
+                              Color(0xE6FFFFFF),
+                              Color(0xF7FFFFFF),
+                              Color(0xFFFFFFFF),
+                            ],
+                      stops: const [0.0, 0.55, 1.0],
                     ),
                   ),
                 ),
@@ -360,15 +366,21 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
         padding: const EdgeInsets.all(5),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0xFF101218),
-          boxShadow: const [
+          color: AppColors.isDark ? const Color(0xFF101218) : Colors.white,
+          boxShadow: [
             BoxShadow(
-              color: Color(0x99000000),
+              color: AppColors.isDark
+                  ? const Color(0x99000000)
+                  : const Color(0x1F000000),
               blurRadius: 46,
-              offset: Offset(0, 18),
+              offset: const Offset(0, 18),
             ),
           ],
-          border: Border.all(color: const Color(0x1FFFFFFF)),
+          border: Border.all(
+            color: AppColors.isDark
+                ? const Color(0x1FFFFFFF)
+                : const Color(0x14000000),
+          ),
         ),
         child: ClipOval(
           child: Stack(
@@ -379,9 +391,16 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                 child: Container(
                   width: 34,
                   height: 34,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF0B0C11),
+                  decoration: BoxDecoration(
+                    color: AppColors.isDark
+                        ? const Color(0xFF0B0C11)
+                        : Colors.white,
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.isDark
+                          ? const Color(0x00FFFFFF)
+                          : const Color(0x14000000),
+                    ),
                   ),
                 ),
               ),
@@ -466,10 +485,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                     fontSize: active ? 17 : 13.5,
                     fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                     color: active
-                        ? Colors.white
+                        ? AppColors.text
                         : (index < player.currentLyricIndex
-                            ? const Color(0xFF8890A0)
-                            : const Color(0xFF5D6472)),
+                            ? AppColors.text2
+                            : AppColors.text3),
                   ),
                 ),
               ),
@@ -490,8 +509,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             data: SliderTheme.of(context).copyWith(
               trackHeight: 3,
               activeTrackColor: AppColors.accent,
-              inactiveTrackColor: const Color(0x3DFFFFFF),
-              thumbColor: Colors.white,
+              inactiveTrackColor: AppColors.isDark
+                  ? const Color(0x3DFFFFFF)
+                  : const Color(0x33000000),
+              thumbColor: AppColors.isDark ? Colors.white : AppColors.text,
               overlayColor: AppColors.accent.withValues(alpha: 0.18),
               thumbShape:
                   const RoundSliderThumbShape(enabledThumbRadius: 6),
