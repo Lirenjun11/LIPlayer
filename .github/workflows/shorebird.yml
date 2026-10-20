@@ -19,6 +19,9 @@ on:
         default: patch
   push:
     branches: [main, master]
+    # Pushing a v* tag builds a new baseline release automatically.
+    tags:
+      - 'v*'
     paths:
       - 'lib/**'
       - 'pubspec.yaml'
@@ -35,14 +38,14 @@ concurrency:
 
 jobs:
   ship:
-    name: Shorebird ${{ inputs.mode || 'patch' }}
+    name: Shorebird ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) && 'release' || inputs.mode || 'patch' }}
     runs-on: macos-15
     timeout-minutes: 90
 
     env:
       FLUTTER_VERSION: '3.47.7'
       SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
-      MODE: ${{ inputs.mode || 'patch' }}
+      MODE: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) && 'release' || inputs.mode || 'patch' }}
 
     steps:
       - name: Checkout
