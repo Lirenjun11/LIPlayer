@@ -12,12 +12,16 @@ class ReleaseAsset {
   final String proxy;
   final String tag;
 
+  /// Version advertised by the release (e.g. `1.0.3+4`), empty when unknown.
+  final String version;
+
   const ReleaseAsset({
     required this.name,
     required this.url,
     required this.size,
     required this.proxy,
     required this.tag,
+    this.version = '',
   });
 
   double get sizeMb => size / (1024 * 1024);
@@ -63,6 +67,7 @@ class ReleaseService {
             size: (asset['size'] as num?)?.toInt() ?? 0,
             proxy: proxy,
             tag: '${json['tag_name'] ?? ''}',
+            version: _parseVersion(json),
           );
         }
       } catch (_) {
@@ -70,6 +75,13 @@ class ReleaseService {
       }
     }
     return null;
+  }
+
+  /// Release titles look like `LIPlayer 1.0.3+4`; the body repeats it too.
+  String _parseVersion(Map<String, dynamic> json) {
+    final text = '${json['name'] ?? ''} ${json['body'] ?? ''}';
+    final match = RegExp(r'\d+\.\d+\.\d+\+\d+').firstMatch(text);
+    return match?.group(0) ?? '';
   }
 
   /// Downloads [asset] into the app's documents directory.

@@ -89,6 +89,27 @@ ThemeData buildTheme(Brightness brightness) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(foregroundColor: AppColors.accent),
     ),
+    // Dialogs and sheets follow the active palette instead of the platform
+    // default, which looked wrong in light mode.
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.bgCard,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      titleTextStyle: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: AppColors.text,
+      ),
+      contentTextStyle: TextStyle(fontSize: 13, color: AppColors.text2),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: AppColors.bgCard,
+      surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+    ),
     textTheme: base.textTheme.apply(
       bodyColor: AppColors.text,
       displayColor: AppColors.text,

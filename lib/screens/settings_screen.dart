@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../app_version.dart';
 import '../models/audio_quality.dart';
 import '../services/release_service.dart';
 import '../models/music_platform.dart';
@@ -42,16 +43,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _limit = DailyRecommendScreen.defaultLimit;
   bool _syncing = false;
   bool _downloading = false;
+  bool _checkingUpdate = false;
+  String? _latestVersion;
 
   @override
   void initState() {
     super.initState();
     _loadLimit();
+    _checkLatest();
   }
 
   Future<void> _loadLimit() async {
     final value = await DailyRecommendScreen.loadLimit();
     if (mounted) setState(() => _limit = value);
+  }
+
+  /// Compares the running build with the newest release.
+  Future<void> _checkLatest() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    final asset = await ReleaseService().fetchLatest();
+    if (!mounted) return;
+    setState(() {
+      _checkingUpdate = false;
+      _latestVersion = asset?.version;
+    });
+  }
+
+  String get _updateLabel {
+    if (_checkingUpdate) return '检查中…';
+    final latest = _latestVersion;
+    if (latest == null || latest.isEmpty) return '未检测到';
+    if (latest == kAppVersion) return '已是最新';
+    return '新版本 $latest';
   }
 
   // ---- Actions -------------------------------------------------------------
@@ -122,6 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       progress.dispose();
+      setState(() => _latestVersion = asset.version);
       _showInstallOptions(file);
     } catch (e) {
       if (!mounted) return;
@@ -517,8 +542,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionTitle('安装包'),
           _card([
             _row(
+              title: '当前版本',
+              value: kAppVersion,
+            ),
+            _divider(),
+            _row(
               title: '下载最新安装包',
-              value: _downloading ? '获取中…' : 'GitHub Releases',
+              value: _downloading ? '获取中…' : _updateLabel,
               onTap: _downloading ? null : _downloadLatest,
             ),
           ]),
