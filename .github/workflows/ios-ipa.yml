@@ -8,17 +8,12 @@ on:
         type: choice
         options: [release, debug]
         default: release
+  # 日常提交不再打完整包（macOS 分钟数按 10 倍计费）：
+  # - 代码改动 → 由 Shorebird 自动推补丁
+  # - 需要完整 IPA 时 → 手动 Run workflow，或打 v* 标签
   push:
-    branches:
-      - main
-      - master
     tags:
       - 'v*'
-    paths-ignore:
-      # 只改文档或工作流时不必重新打包
-      - '**.md'
-      - '.github/**'
-      - '.gitignore'
 
 concurrency:
   group: ios-ipa-${{ github.ref }}
