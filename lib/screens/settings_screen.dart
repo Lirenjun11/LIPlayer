@@ -92,14 +92,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '新版本 $latest';
   }
 
-  /// Latest version already installed: no point downloading again unless the
-  /// file was cleaned up and the user wants it back.
-  bool get _isLatest =>
+  /// Only a newer release enables the download row; everything else
+  /// (checking, unknown, already latest) is disabled.
+  bool get _hasUpdate =>
       !_checkingUpdate &&
       (_latestVersion ?? '').isNotEmpty &&
-      _latestVersion == kAppVersion;
+      _latestVersion != kAppVersion;
 
-  bool get _canDownload => !_downloading && (!_isLatest || _ipaBytes == 0);
+  bool get _canDownload => !_downloading && _hasUpdate;
 
   // ---- Actions -------------------------------------------------------------
 
