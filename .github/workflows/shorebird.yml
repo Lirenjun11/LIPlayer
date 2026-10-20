@@ -26,6 +26,9 @@ on:
       - 'assets/**'
       - 'shorebird.yaml'
 
+permissions:
+  contents: write
+
 concurrency:
   group: shorebird-${{ github.ref }}
   cancel-in-progress: false
@@ -129,7 +132,7 @@ jobs:
         if: steps.check.outputs.ready == 'true' && env.MODE == 'patch'
         run: |
           set +e
-          output=$(shorebird patch ios 2>&1)
+          output=$(shorebird patch ios --no-codesign 2>&1)
           status=$?
           echo "$output"
           if [ $status -ne 0 ]; then
@@ -137,6 +140,13 @@ jobs:
               echo "::notice title=跳过热更新::还没有基线包，请先手动运行一次 mode=release"
               exit 0
             fi
+            # Publish the failure log so it can be inspected without CI access.
+            printf '%s\n' "$output" > patch-error.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f patch-error.log
+            git commit -m "chore: shorebird patch failure log [skip ci]" || true
+            git push || true
             exit $status
           fi
 
