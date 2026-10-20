@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +9,33 @@ import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/queue_sheet.dart';
+
+/// Lightweight fade+slide transition; the default platform route animates
+/// the whole page (artwork + lyrics) and feels heavy on device.
+Route<void> fullPlayerRoute() {
+  return PageRouteBuilder<void>(
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    pageBuilder: (_, __, ___) => const FullPlayerScreen(),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.05),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -130,19 +156,29 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Blurred art backdrop.
-          CoverImage(url: song.artwork),
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
-            child: Container(color: const Color(0xC407080C)),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0x1A000000), Color(0xE607080C)],
-              ),
+          // Dimmed artwork backdrop. A full-screen BackdropFilter used to sit
+          // here; it re-blurred the whole page every frame and made the route
+          // transition stutter, so a cheap static gradient does the job.
+          RepaintBoundary(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CoverImage(url: song.artwork),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xE60A0C12),
+                        Color(0xF507080C),
+                        Color(0xFF07080C),
+                      ],
+                      stops: [0.0, 0.55, 1.0],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           SafeArea(
@@ -150,11 +186,26 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               children: [
                 _topBar(context, player),
                 const Spacer(flex: 2),
-                _cover(song.artwork),
+                RepaintBoundary(child: _cover(song.artwork)),
                 const SizedBox(height: 26),
                 _songInfo(song.title, song.artist, song.album),
                 const Spacer(flex: 2),
-                Expanded(flex: 5, child: _lyrics(player)),
+                Expanded(
+                  flex: 5,
+                  child: RepaintBoundary(
+                    // Rebuild lyrics only when the highlighted line changes,
+                    // not on every position tick.
+                    child: Selector<PlayerState, (int, int, bool)>(
+                      selector: (_, p) => (
+                        p.currentLyricIndex,
+                        p.lyrics.length,
+                        p.lyricsLoading,
+                      ),
+                      builder: (context, _, __) =>
+                          _lyrics(context.read<PlayerState>()),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 8),
                 _progress(player, value, totalMs),
                 _controls(context, player),

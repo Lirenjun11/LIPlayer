@@ -20,6 +20,20 @@ class CoverImage extends StatelessWidget {
     this.fit = BoxFit.cover,
   });
 
+  /// Some CDNs (NetEase in particular) reject non-browser user agents with a
+  /// 403, which is why covers used to stay on the placeholder.
+  static const String _userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+  static Map<String, String> _headersFor(String url) {
+    final headers = <String, String>{'User-Agent': _userAgent};
+    if (url.contains('music.126.net')) {
+      headers['Referer'] = 'https://music.163.com/';
+    }
+    return headers;
+  }
+
   @override
   Widget build(BuildContext context) {
     final resolved = url.replaceFirst(RegExp(r'^http:'), 'https:');
@@ -35,6 +49,7 @@ class CoverImage extends StatelessWidget {
           ? _fallback()
           : CachedNetworkImage(
               imageUrl: resolved,
+              httpHeaders: _headersFor(resolved),
               width: width,
               height: height,
               fit: fit,

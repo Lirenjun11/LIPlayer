@@ -9,6 +9,9 @@ class MusicCollection {
   final int playCount;
   final String platform;
 
+  /// Upstream source id (`wy`, `kw`, ...) required by the detail endpoint.
+  final String src;
+
   MusicCollection({
     required this.id,
     required this.title,
@@ -16,6 +19,7 @@ class MusicCollection {
     this.artist = '',
     this.playCount = 0,
     required this.platform,
+    this.src = '',
   });
 
   factory MusicCollection.fromJson(Map<String, dynamic> json, {String? platform}) {
@@ -26,6 +30,7 @@ class MusicCollection {
       artist: '${json['artist'] ?? ''}',
       playCount: _asInt(json['playCount']),
       platform: platform ?? '${json['platform'] ?? ''}',
+      src: '${json['src'] ?? ''}',
     );
   }
 

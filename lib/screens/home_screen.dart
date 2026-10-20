@@ -3,12 +3,12 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/music_collection.dart';
 import '../models/music_platform.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
-import '../state/auth_state.dart';
 import '../state/player_state.dart';
 import '../theme.dart';
 import '../utils/format.dart';
@@ -18,7 +18,10 @@ import '../widgets/platform_picker.dart';
 import '../widgets/queue_sheet.dart';
 import '../widgets/song_tile.dart';
 import 'collection_screen.dart';
+import 'daily_recommend_screen.dart';
 import 'full_player_screen.dart';
+import 'recent_plays_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,11 +34,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   final _bannerController = PageController(viewportFraction: 0.9);
+  final _discoverController = ScrollController();
+  final _searchListController = ScrollController();
   Timer? _searchDebounce;
   Timer? _bannerTimer;
 
+  static const String _platformKey = 'music_player_platform';
+
   int _tab = 0;
   int _mineSection = 0;
+  int _recommendLimit = DailyRecommendScreen.defaultLimit;
   int _bannerIndex = 0;
   bool _searchOpen = false;
 
@@ -76,13 +84,76 @@ class _HomeScreenState extends State<HomeScreen> {
         curve: Curves.easeOutCubic,
       );
     });
+    _discoverController.addListener(_onDiscoverScroll);
+    _searchListController.addListener(_onSearchScroll);
+    _refreshRecommendLimit();
     WidgetsBinding.instance.addPostFrameCallback((_) => _initDiscovery());
+  }
+
+  Future<void> _refreshRecommendLimit() async {
+    final value = await DailyRecommendScreen.loadLimit();
+    if (!mounted || value == _recommendLimit) return;
+    setState(() => _recommendLimit = value);
+  }
+
+  /// Infinite scroll for search results.
+  void _onSearchScroll() {
+    if (!_searchListController.hasClients) return;
+    final position = _searchListController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      _loadMoreSearch();
+    }
+  }
+
+  void _loadMoreSearch() {
+    if (_searching || _searchEnd || _searchResults.isEmpty) return;
+    _search(more: true);
+  }
+
+  void _ensureSearchScrollable() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_searchListController.hasClients) return;
+      if (_searchListController.position.maxScrollExtent <= 0) {
+        _loadMoreSearch();
+      }
+    });
+  }
+
+  /// Infinite scroll: fetch the next page shortly before reaching the bottom.
+  void _onDiscoverScroll() {
+    if (!_discoverController.hasClients) return;
+    final position = _discoverController.position;
+    if (position.pixels >= position.maxScrollExtent - 320) {
+      _loadMoreSheets();
+    }
+  }
+
+  void _loadMoreSheets() {
+    if (_loadingSheets || _sheetsEnd || _sheets.isEmpty) return;
+    _loadSheets(more: true);
+  }
+
+  /// The first page may not fill the viewport, in which case no scroll happens
+  /// and the next page would never load.
+  void _ensureScrollable() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_discoverController.hasClients) return;
+      if (_discoverController.position.maxScrollExtent <= 0) {
+        _loadMoreSheets();
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
     _bannerTimer?.cancel();
+    _discoverController
+      ..removeListener(_onDiscoverScroll)
+      ..dispose();
+    _searchListController
+      ..removeListener(_onSearchScroll)
+      ..dispose();
     _searchController.dispose();
     _searchFocus.dispose();
     _bannerController.dispose();
@@ -100,10 +171,21 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final platforms = await _api.fetchPlatforms();
       if (!mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_platformKey) ?? '';
       setState(() {
         _platforms = platforms;
-        _currentPlatform = platforms.isNotEmpty ? platforms.first.platform : '';
+        // Restore the platform picked last time when it is still available.
+        if (platforms.any((p) => p.platform == saved)) {
+          _currentPlatform = saved;
+        } else {
+          _currentPlatform =
+              platforms.isNotEmpty ? platforms.first.platform : '';
+        }
       });
+      if (_currentPlatform.isNotEmpty) {
+        await prefs.setString(_platformKey, _currentPlatform);
+      }
       await _loadDiscovery();
     } catch (e) {
       _toast('$e');
@@ -153,11 +235,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await _api.fetchSheets(_currentPlatform, page);
       if (!mounted) return;
+      // Drop duplicates so repeated pages cannot grow the list forever.
+      final known = _sheets.map((s) => '${s.platform}_${s.id}').toSet();
+      final fresh = result.items
+          .where((s) => known.add('${s.platform}_${s.id}'))
+          .toList();
       setState(() {
         _sheetsPage = page;
-        _sheetsEnd = result.isEnd;
-        _sheets = more ? [..._sheets, ...result.items] : result.items;
+        // An empty page means there is nothing left to fetch; stop the loop.
+        _sheetsEnd = result.isEnd || (more && fresh.isEmpty);
+        _sheets = more ? [..._sheets, ...fresh] : result.items;
       });
+      _ensureScrollable();
     } catch (_) {
       if (!mounted) return;
       if (!more) setState(() => _sheets = []);
@@ -184,12 +273,15 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await _api.search(_currentPlatform, keyword, page);
       if (!mounted) return;
+      final known = _searchResults.map((s) => s.uniqueKey).toSet();
+      final fresh =
+          result.items.where((s) => known.add(s.uniqueKey)).toList();
       setState(() {
         _searchPage = page;
-        _searchEnd = result.isEnd;
-        _searchResults =
-            more ? [..._searchResults, ...result.items] : result.items;
+        _searchEnd = result.isEnd || (more && fresh.isEmpty);
+        _searchResults = more ? [..._searchResults, ...fresh] : result.items;
       });
+      _ensureSearchScrollable();
     } catch (e) {
       _toast('搜索失败: $e');
     } finally {
@@ -209,7 +301,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _toast('加载$label...');
     try {
       final platform = item.platform.isEmpty ? _currentPlatform : item.platform;
-      final songs = await _api.fetchCollectionDetail(endpoint, platform, item.id);
+      final songs = await _api.fetchCollectionDetail(
+        endpoint,
+        platform,
+        item.id,
+        src: item.src,
+      );
       if (!mounted) return;
       if (songs.isEmpty) {
         _toast('$label暂无歌曲');
@@ -255,6 +352,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchEnd = false;
       _bannerIndex = 0;
     });
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString(_platformKey, platform.platform));
     _loadDiscovery();
   }
 
@@ -279,9 +378,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _toast('还没有播放中的歌曲');
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const FullPlayerScreen()),
-    );
+    Navigator.of(context).push(fullPlayerRoute());
   }
 
   // ---- Derived data --------------------------------------------------------
@@ -317,24 +414,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _bottomNav() {
-    final player = context.watch<PlayerState>();
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.bg,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              _navItem(0, Icons.explore_outlined, Icons.explore, '发现'),
-              Expanded(child: _playerEntry(player)),
-              _navItem(2, Icons.person_outline, Icons.person, '我的'),
-            ],
+    const barHeight = 56.0;
+    const buttonSize = 64.0;
+    const bottomMargin = 8.0;
+    // Keeps the button's bottom on the same baseline as the tab labels, so the
+    // disc rises 16px above the pill instead of floating in its centre.
+    const bottomGap = 8.0;
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    // Only the centre entry needs playback state; watching it here rebuilt the
+    // entire home page on every position tick (~5 times per second).
+    final stackHeight = buttonSize + bottomGap + bottomMargin + bottomInset;
+    final pillBottom = bottomMargin + bottomInset;
+    final pillTop = stackHeight - pillBottom - barHeight;
+    // Centre of the disc, expressed inside the pill's own coordinates.
+    final notchCenterY = (buttonSize / 2) - pillTop;
+
+    return SizedBox(
+      height: stackHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: pillBottom,
+            height: barHeight,
+            child: CustomPaint(
+              painter: _PillPainter(
+                color: const Color(0xFF10131A),
+                borderColor: const Color(0x14FFFFFF),
+                notchCenterY: notchCenterY,
+                notchRadius: buttonSize / 2 + 3,
+              ),
+              child: Row(
+                children: [
+                  _navItem(0, Icons.explore_outlined, Icons.explore, '发现'),
+                  const SizedBox(width: 76),
+                  _navItem(2, Icons.person_outline, Icons.person, '我的'),
+                ],
+              ),
+            ),
           ),
-        ),
+          // The disc sits in the hole cut out of the pill.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Consumer<PlayerState>(
+                builder: (context, player, _) => _playerEntry(player),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -343,7 +476,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // The search page is reachable from 发现, so keep that tab highlighted.
     final selected = _tab == index;
     return Expanded(
-      child: InkWell(
+      // No InkWell: desktop hover/highlight rectangles look out of place here.
+      // Selection is conveyed purely by icon + label colour.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () => setState(() {
           _tab = index;
           _searchOpen = false;
@@ -371,39 +507,47 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Centre entry that opens the full player; replaces the old mini player.
+  /// Centre entry that opens the full player; shows the current artwork.
   Widget _playerEntry(PlayerState player) {
-    final hasSong = player.currentSong != null;
-    return InkWell(
+    final song = player.currentSong;
+    final playing = song != null;
+    final hasArt = song != null && song.artwork.isNotEmpty;
+
+    Widget inner;
+    if (hasArt) {
+      inner = CoverImage(url: song.artwork, width: 58, height: 58);
+    } else if (playing) {
+      inner = Container(
+        decoration: const BoxDecoration(gradient: kAccentGradient),
+        alignment: Alignment.center,
+        child: const Icon(Icons.graphic_eq, size: 22, color: Colors.white),
+      );
+    } else {
+      inner = Container(
+        color: AppColors.bgCard2,
+        alignment: Alignment.center,
+        child: const Icon(Icons.play_arrow_rounded,
+            size: 24, color: AppColors.text2),
+      );
+    }
+
+    return GestureDetector(
       onTap: _openPlayer,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: hasSong ? kAccentGradient : null,
-              color: hasSong ? null : AppColors.bgCard2,
-              shape: BoxShape.circle,
-              boxShadow: hasSong
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x4DFF4D6D),
-                        blurRadius: 14,
-                        offset: Offset(0, 4),
-                      ),
-                    ]
-                  : null,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0x26FFFFFF)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0xCC000000),
+              blurRadius: 10,
+              offset: Offset(0, 2),
             ),
-            child: Icon(
-              hasSong ? Icons.graphic_eq : Icons.play_arrow_rounded,
-              size: 19,
-              color: hasSong ? Colors.white : AppColors.text3,
-            ),
-          ),
-        ],
+          ],
+        ),
+        child: ClipOval(child: inner),
       ),
     );
   }
@@ -413,6 +557,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _discoverTab() {
     final banners = _bannerItems;
     return CustomScrollView(
+      controller: _discoverController,
       slivers: [
         SliverToBoxAdapter(child: _discoverHeader()),
         SliverToBoxAdapter(child: _searchEntry()),
@@ -468,24 +613,41 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-        if (_sheets.isNotEmpty && !_sheetsEnd)
+        if (_sheets.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: OutlinedButton(
-                onPressed: _loadingSheets ? null : () => _loadSheets(more: true),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.text2,
-                  side: const BorderSide(color: AppColors.border),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                ),
-                child: Text(_loadingSheets ? '加载中...' : '加载更多歌单'),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 2),
+              child: Center(
+                child: _loadingSheets
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            '正在加载更多',
+                            style: TextStyle(
+                                fontSize: 11, color: AppColors.text2),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        _sheetsEnd ? '已经到底啦' : '上滑加载更多',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.text3),
+                      ),
               ),
             ),
           ),
-        const SliverToBoxAdapter(child: SizedBox(height: 24)),
+        // Extra room so content does not crowd the floating player button.
+        const SliverToBoxAdapter(child: SizedBox(height: 44)),
       ],
     );
   }
@@ -836,24 +998,39 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Expanded(
           child: ListView.builder(
+            controller: _searchListController,
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
             itemCount: _searchResults.length + (_searchEnd ? 0 : 1),
             itemBuilder: (context, index) {
               if (index >= _searchResults.length) {
-                if (_searching) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
-                    child: Center(
-                      child: Text('搜索中...',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.text2)),
-                    ),
-                  );
-                }
-                return TextButton(
-                  onPressed: () => _search(more: true),
-                  child: const Text('加载更多',
-                      style: TextStyle(color: AppColors.accent)),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: _searching
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 13,
+                                height: 13,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.8,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text('正在加载更多',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.text2)),
+                            ],
+                          )
+                        : const Text(
+                            '上滑加载更多',
+                            style: TextStyle(
+                                fontSize: 11, color: AppColors.text3),
+                          ),
+                  ),
                 );
               }
               final song = _searchResults[index];
@@ -887,7 +1064,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverToBoxAdapter(child: _promoBanner()),
         SliverToBoxAdapter(child: _mineTabs()),
         ..._mineSectionSlivers(player),
-        const SliverToBoxAdapter(child: SizedBox(height: 30)),
+        const SliverToBoxAdapter(child: SizedBox(height: 44)),
       ],
     );
   }
@@ -908,9 +1085,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Spacer(),
           IconButton(
-            tooltip: '入库',
-            icon: const Icon(Icons.library_add_outlined,
-                size: 21, color: AppColors.text2),
+            tooltip: '同步音源',
+            icon: const Icon(Icons.sync_rounded,
+                size: 20, color: AppColors.text2),
             onPressed: _importSources,
           ),
           IconButton(
@@ -922,7 +1099,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: '设置',
             icon: const Icon(Icons.settings_outlined,
                 size: 21, color: AppColors.text2),
-            onPressed: _showMineSettings,
+            onPressed: _openSettings,
           ),
         ],
       ),
@@ -1043,8 +1220,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '音乐源',
-                    icon: const Icon(Icons.person_add_alt_1_outlined,
+                    tooltip: '同步音源',
+                    icon: const Icon(Icons.sync_rounded,
                         size: 20, color: Colors.white),
                     onPressed: _importSources,
                   ),
@@ -1067,7 +1244,18 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       child: GestureDetector(
-        onTap: () => setState(() => _tab = 0),
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DailyRecommendScreen(
+                api: _api,
+                platform: _currentPlatform,
+                recentPlays: context.read<PlayerState>().recentPlays,
+              ),
+            ),
+          );
+          _refreshRecommendLimit();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: BoxDecoration(
@@ -1116,9 +1304,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
-              const Text(
-                '为你精选歌单',
-                style: TextStyle(fontSize: 11, color: AppColors.text2),
+              Text(
+                '每天 $_recommendLimit 首 · 按口味生成',
+                style: const TextStyle(fontSize: 11, color: AppColors.text2),
               ),
               const Icon(Icons.chevron_right, size: 16, color: AppColors.text3),
             ],
@@ -1286,17 +1474,12 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Icons.history_rounded,
           iconColor: const Color(0xFF7A8CFF),
           title: '最近播放',
-          subtitle: player.currentSong == null
+          subtitle: player.recentPlays.isEmpty
               ? '暂无播放记录'
-              : (player.currentSong!.title.isEmpty
-                  ? '未知歌曲'
-                  : player.currentSong!.title),
-          onTap: player.currentSong == null
-              ? null
-              : () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const FullPlayerScreen()),
-                  ),
+              : '${player.recentPlays.length} 首 · ${player.recentPlays.first.title.isEmpty ? '未知歌曲' : player.recentPlays.first.title}',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const RecentPlaysScreen()),
+          ),
         ),
       ),
       SliverToBoxAdapter(
@@ -1378,8 +1561,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const Spacer(),
               TextButton.icon(
                 onPressed: _importSources,
-                icon: const Icon(Icons.library_add_outlined, size: 17),
-                label: const Text('入库', style: TextStyle(fontSize: 13)),
+                icon: const Icon(Icons.sync_rounded, size: 17),
+                label: const Text('同步音源', style: TextStyle(fontSize: 13)),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   minimumSize: const Size(0, 34),
@@ -1394,7 +1577,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Padding(
           padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: Text(
-            '点击“入库”从服务端同步最新的音乐源列表',
+            '点击「同步音源」从服务端获取最新的音源列表',
             style: TextStyle(fontSize: 11, color: AppColors.text3),
           ),
         ),
@@ -1414,80 +1597,27 @@ class _HomeScreenState extends State<HomeScreen> {
           _currentPlatform = platforms.first.platform;
         }
       });
-      _toast('已入库 ${platforms.length} 个音乐源');
+      _toast('已同步 ${platforms.length} 个音源');
       if (_toplistGroups.isEmpty && _currentPlatform.isNotEmpty) {
         _loadDiscovery();
       }
     } catch (e) {
-      _toast('入库失败: $e');
+      _toast('同步失败: $e');
     }
   }
 
-  void _showMineSettings() {
-    final auth = context.read<AuthState>();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.bgCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          api: _api,
+          platforms: _platforms,
+          currentPlatform: _currentPlatform,
+          onPlatformChanged: _selectPlatform,
+        ),
       ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.text3,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.library_add_outlined,
-                    color: AppColors.text2),
-                title: const Text('音乐源入库', style: TextStyle(fontSize: 14)),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _importSources();
-                },
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.swap_horiz, color: AppColors.text2),
-                title: const Text('切换音乐源', style: TextStyle(fontSize: 14)),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  if (_platforms.isEmpty) {
-                    _toast('暂无音乐源，请先入库');
-                    return;
-                  }
-                  showPlatformPicker(
-                    context,
-                    platforms: _platforms,
-                    current: _currentPlatform,
-                    onSelect: _selectPlatform,
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Color(0xFFFF7A93)),
-                title: const Text('退出登录',
-                    style:
-                        TextStyle(fontSize: 14, color: Color(0xFFFF7A93))),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  auth.logout();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
     );
+    _refreshRecommendLimit();
   }
 
   Widget _nowPlayingCard(PlayerState player) {
@@ -2004,6 +2134,66 @@ class _MineRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Rounded pill with a circular hole cut out for the player disc, plus an
+/// inner shadow around the hole so the disc looks recessed.
+class _PillPainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+  final double notchCenterY;
+  final double notchRadius;
+
+  const _PillPainter({
+    required this.color,
+    required this.borderColor,
+    required this.notchCenterY,
+    required this.notchRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bar = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Offset.zero & size,
+        Radius.circular(size.height / 2),
+      ));
+    final hole = Path()
+      ..addOval(Rect.fromCircle(
+        center: Offset(size.width / 2, notchCenterY),
+        radius: notchRadius,
+      ));
+    final pill = Path.combine(PathOperation.difference, bar, hole);
+
+    // Drop shadow of the whole pill.
+    canvas.drawShadow(pill, const Color(0xCC000000), 12, false);
+
+    canvas.drawPath(pill, Paint()..color = color);
+    canvas.drawPath(
+      pill,
+      Paint()
+        ..color = borderColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    // Inner shadow hugging the hole => depth.
+    canvas.drawCircle(
+      Offset(size.width / 2, notchCenterY),
+      notchRadius + 1,
+      Paint()
+        ..color = const Color(0x99000000)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 7
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PillPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.notchCenterY != notchCenterY ||
+      oldDelegate.notchRadius != notchRadius;
 }
 
 class _Tip extends StatelessWidget {

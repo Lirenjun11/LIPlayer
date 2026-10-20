@@ -45,6 +45,8 @@ class CollectionScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
+      // Lets the frosted mini player blur the list behind it.
+      extendBody: true,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -190,7 +192,8 @@ class CollectionScreen extends StatelessWidget {
               );
             },
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          // Room for the floating player capsule.
+          const SliverToBoxAdapter(child: SizedBox(height: 96)),
         ],
       ),
       bottomNavigationBar: const MiniPlayer(),

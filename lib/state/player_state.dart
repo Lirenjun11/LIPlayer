@@ -26,6 +26,8 @@ extension PlayModeLabel on PlayMode {
 class PlayerState extends ChangeNotifier {
   static const String _stateKey = 'music_player_state';
   static const String _qualityKey = 'music_player_quality';
+  static const String _recentKey = 'music_player_recent';
+  static const int recentLimit = 100;
 
   final ApiService api;
   final AudioPlayer _player = AudioPlayer();
@@ -49,6 +51,9 @@ class PlayerState extends ChangeNotifier {
   List<LyricLine> lyrics = const [];
   int currentLyricIndex = -1;
   bool lyricsLoading = false;
+
+  /// Most recent tracks, newest first, capped at [recentLimit].
+  List<Song> recentPlays = [];
 
   /// Notifies the UI about transient errors (shown as a snackbar).
   void Function(String message)? onError;
@@ -205,6 +210,35 @@ class PlayerState extends ChangeNotifier {
     }
   }
 
+  // ---- Recently played -----------------------------------------------------
+
+  void _recordRecent(Song song) {
+    recentPlays.removeWhere((s) => s.uniqueKey == song.uniqueKey);
+    recentPlays.insert(0, song);
+    if (recentPlays.length > recentLimit) {
+      recentPlays = recentPlays.sublist(0, recentLimit);
+    }
+    _saveRecent();
+    notifyListeners();
+  }
+
+  void clearRecent() {
+    recentPlays = [];
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.remove(_recentKey));
+    notifyListeners();
+  }
+
+  Future<void> _saveRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _recentKey,
+        jsonEncode(recentPlays.map((s) => s.toJson()).toList()),
+      );
+    } catch (_) {}
+  }
+
   // ---- Playback ------------------------------------------------------------
 
   Future<void> playAt(int index) async {
@@ -242,6 +276,7 @@ class PlayerState extends ChangeNotifier {
       }
       _hasSource = true;
       unawaited(_player.play());
+      _recordRecent(song);
       _fetchLyric(song, token);
       unawaited(_fetchSongDetail(song, token));
       _saveState();
@@ -276,6 +311,7 @@ class PlayerState extends ChangeNotifier {
           song.title,
           song.artist,
           quality: tier,
+          source: song.source,
         );
       } catch (_) {
         continue;
@@ -511,6 +547,21 @@ class PlayerState extends ChangeNotifier {
           (q) => q.name == savedQuality,
           orElse: () => AudioQuality.standard,
         );
+      }
+
+      // Recently played list is independent from the queue as well.
+      final recentRaw = prefs.getString(_recentKey);
+      if (recentRaw != null && recentRaw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(recentRaw);
+          if (decoded is List) {
+            recentPlays = decoded
+                .whereType<Map<String, dynamic>>()
+                .map(Song.fromJson)
+                .take(recentLimit)
+                .toList();
+          }
+        } catch (_) {}
       }
 
       final raw = prefs.getString(_stateKey);

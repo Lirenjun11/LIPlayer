@@ -10,6 +10,10 @@ class Song {
   /// Raw duration as returned by the API (usually milliseconds).
   final int duration;
 
+  /// Upstream source id (`wy`, `kw`, ...). Multi-source plugins need it echoed
+  /// back to `play-url`, otherwise the track cannot be resolved.
+  final String source;
+
   /// Resolved stream URL, populated lazily via the play-url endpoint.
   String? playUrl;
 
@@ -21,6 +25,7 @@ class Song {
     this.artwork = '',
     required this.platform,
     this.duration = 0,
+    this.source = '',
     this.playUrl,
   });
 
@@ -33,7 +38,12 @@ class Song {
     return Duration(milliseconds: ms);
   }
 
-  factory Song.fromJson(Map<String, dynamic> json, {String? platform}) {
+  factory Song.fromJson(
+    Map<String, dynamic> json, {
+    String? platform,
+    String? source,
+  }) {
+    final rawSource = '${json['source'] ?? ''}';
     return Song(
       id: '${json['id'] ?? ''}',
       title: '${json['title'] ?? ''}',
@@ -42,6 +52,7 @@ class Song {
       artwork: normalizeUrl('${json['artwork'] ?? json['coverImg'] ?? ''}'),
       platform: platform ?? '${json['platform'] ?? ''}',
       duration: _asInt(json['duration']),
+      source: rawSource.isNotEmpty ? rawSource : (source ?? ''),
     );
   }
 
@@ -53,6 +64,7 @@ class Song {
         'artwork': artwork,
         'platform': platform,
         'duration': duration,
+        'source': source,
       };
 
   static int _asInt(dynamic value) {

@@ -242,16 +242,27 @@ class ApiService {
     return Paged(items, _asEnd(data));
   }
 
+  /// Fetches a collection (sheet / toplist) detail.
+  ///
+  /// Multi-source plugins need the upstream `src` echoed back, and each track
+  /// carries its own `source` which must be forwarded to `play-url`.
   Future<List<Song>> fetchCollectionDetail(
-      String endpoint, String platform, String id) async {
+    String endpoint,
+    String platform,
+    String id, {
+    String src = '',
+  }) async {
     final data = await _get(endpoint, {
       'platform': platform,
       'id': id,
       'page': 1,
+      if (src.isNotEmpty) 'src': src,
     });
+    final responseSrc =
+        (data is Map && data['src'] != null) ? '${data['src']}' : src;
     return _asList(data, ['data', 'musicList'])
         .whereType<Map<String, dynamic>>()
-        .map((e) => Song.fromJson(e, platform: platform))
+        .map((e) => Song.fromJson(e, platform: platform, source: responseSrc))
         .toList();
   }
 
@@ -264,12 +275,14 @@ class ApiService {
     String title,
     String artist, {
     AudioQuality quality = AudioQuality.standard,
+    String source = '',
   }) async {
     String? downgraded;
     for (final value in quality.candidates) {
       String url;
       try {
-        url = await _requestPlayUrl(platform, id, title, artist, value);
+        url =
+            await _requestPlayUrl(platform, id, title, artist, value, source);
       } catch (_) {
         continue;
       }
@@ -283,14 +296,15 @@ class ApiService {
     return quality == AudioQuality.lossless ? (downgraded ?? '') : '';
   }
 
-  Future<String> _requestPlayUrl(
-      String platform, String id, String title, String artist, String quality) async {
+  Future<String> _requestPlayUrl(String platform, String id, String title,
+      String artist, String quality, String source) async {
     final data = await _get('api/external/play-url', {
       'platform': platform,
       'id': id,
       'quality': quality,
       'title': title,
       'artist': artist,
+      if (source.isNotEmpty) 'source': source,
     });
     if (data is Map && data['url'] != null) {
       // Keep the scheme returned by the backend: some CDNs serve HTTPS with

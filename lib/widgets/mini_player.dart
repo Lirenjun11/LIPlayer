@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,7 +8,7 @@ import '../state/player_state.dart';
 import '../theme.dart';
 import 'cover_image.dart';
 
-/// Floating bottom bar showing the current track, like mainstream players.
+/// Floating frosted-glass capsule showing the current track.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
 
@@ -17,90 +19,103 @@ class MiniPlayer extends StatelessWidget {
     if (song == null) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const FullPlayerScreen()),
-        ),
+        onTap: () => Navigator.of(context).push(fullPlayerRoute()),
         child: Container(
-          height: 62,
           decoration: BoxDecoration(
-            color: AppColors.bgCard,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x66000000),
-                blurRadius: 18,
-                offset: Offset(0, 6),
+                color: Color(0x8C000000),
+                blurRadius: 20,
+                offset: Offset(0, 8),
               ),
             ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: LinearProgressIndicator(
-                  value: player.progress / 100,
-                  minHeight: 2,
-                  backgroundColor: Colors.transparent,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(AppColors.accent),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                height: 58,
+                decoration: BoxDecoration(
+                  color: const Color(0x99101319),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0x26FFFFFF)),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 6, 8),
-                child: Row(
+                child: Stack(
                   children: [
-                    CoverImage(
-                        url: song.artwork, width: 44, height: 44, radius: 12),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 0,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: player.progress / 100,
+                          minHeight: 2,
+                          backgroundColor: Colors.transparent,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              AppColors.accent),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 6, 8),
+                      child: Row(
                         children: [
-                          Text(
-                            song.title.isEmpty ? '未知歌曲' : song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.text,
+                          CoverImage(
+                              url: song.artwork,
+                              width: 42,
+                              height: 42,
+                              radius: 12),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  song.title.isEmpty ? '未知歌曲' : song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.text,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  song.artist.isEmpty ? '未知歌手' : song.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: AppColors.text2),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            song.artist.isEmpty ? '未知歌手' : song.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.text2),
+                          _MiniIconButton(
+                            icon: player.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            loading: player.isLoadingUrl,
+                            onTap: player.togglePlay,
+                          ),
+                          _MiniIconButton(
+                            icon: Icons.skip_next_rounded,
+                            onTap: player.next,
                           ),
                         ],
                       ),
                     ),
-                    _MiniIconButton(
-                      icon: player.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      loading: player.isLoadingUrl,
-                      onTap: player.togglePlay,
-                    ),
-                    _MiniIconButton(
-                      icon: Icons.skip_next_rounded,
-                      onTap: player.next,
-                    ),
-                    const SizedBox(width: 2),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -121,22 +136,22 @@ class _MiniIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 42,
-        height: 42,
+        width: 40,
+        height: 40,
         child: loading
             ? const Center(
                 child: SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: 15,
+                  height: 15,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: AppColors.accent),
                 ),
               )
-            : Icon(icon, size: 26, color: AppColors.text),
+            : Icon(icon, size: 24, color: AppColors.text),
       ),
     );
   }
