@@ -34,7 +34,7 @@ Future<void> showQueueSheet(BuildContext context) {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('播放队列',
+                  Text('播放队列',
                       style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -42,7 +42,7 @@ Future<void> showQueueSheet(BuildContext context) {
                   Row(
                     children: [
                       Text('${player.playlist.length} 首',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 12, color: AppColors.text2)),
                       const SizedBox(width: 12),
                       GestureDetector(
@@ -64,10 +64,10 @@ Future<void> showQueueSheet(BuildContext context) {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
+            Divider(height: 1, color: AppColors.border),
             Expanded(
               child: player.playlist.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text('播放队列为空',
                           style: TextStyle(color: AppColors.text2)),
                     )
@@ -86,7 +86,7 @@ Future<void> showQueueSheet(BuildContext context) {
                             Navigator.of(context).pop();
                           },
                           trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline,
+                            icon: Icon(Icons.delete_outline,
                                 size: 20, color: AppColors.text2),
                             onPressed: () => player.removeFromPlaylist(index),
                           ),

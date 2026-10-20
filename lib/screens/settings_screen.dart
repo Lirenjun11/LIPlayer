@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/audio_quality.dart';
 import '../models/music_platform.dart';
 import '../services/api_service.dart';
+import '../state/app_settings.dart';
 import '../state/auth_state.dart';
 import '../state/player_state.dart';
 import '../theme.dart';
@@ -49,6 +50,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ---- Actions -------------------------------------------------------------
+
+  Future<void> _pickTheme() async {
+    final settings = context.read<AppSettings>();
+    final selected = await _pick<ThemeMode>(
+      title: '主题',
+      values: ThemeMode.values,
+      current: settings.themeMode,
+      labelOf: AppSettings.themeLabel,
+    );
+    if (selected == null) return;
+    await settings.setThemeMode(selected);
+  }
+
+  Future<void> _pickFont() async {
+    final settings = context.read<AppSettings>();
+    final selected = await _pick<double>(
+      title: '字体大小',
+      values: AppSettings.fontOptions,
+      current: settings.fontScale,
+      labelOf: AppSettings.labelOf,
+    );
+    if (selected == null) return;
+    await settings.setFontScale(selected);
+  }
 
   Future<void> _pickLimit() async {
     final selected = await _pick<int>(
@@ -122,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 6),
                 child: Text(
                   '选择音乐源',
@@ -163,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               platform.supportedSearchType
                                   .map(_typeLabel)
                                   .join(' · '),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 10, color: AppColors.text3),
                             ),
                       onTap: () => Navigator.of(ctx).pop(platform),
@@ -224,7 +249,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.text,
@@ -265,12 +290,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerState>();
+    final settings = context.watch<AppSettings>();
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        title: const Text(
+        title: Text(
           '设置',
           style: TextStyle(
             fontSize: 16,
@@ -279,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
               size: 18, color: AppColors.text),
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -287,6 +313,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 36),
         children: [
+          _sectionTitle('外观'),
+          _card([
+            // Icons are omitted on purpose: adding new glyphs changes the
+            // tree-shaken MaterialIcons font, which blocks Shorebird patches.
+            _row(
+              title: '主题',
+              value: AppSettings.themeLabel(settings.themeMode),
+              onTap: _pickTheme,
+            ),
+            _divider(),
+            _row(
+              title: '字体大小',
+              value: settings.fontLabel,
+              onTap: _pickFont,
+            ),
+          ]),
           _sectionTitle('播放'),
           _card([
             _row(
@@ -320,7 +362,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
           if (_platforms.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(6, 10, 6, 0),
               child: Text(
                 '暂无音源，点击「同步音源」从服务端获取',
@@ -346,7 +388,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.fromLTRB(6, 18, 6, 8),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: AppColors.text2,
@@ -367,7 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _divider() {
-    return const Divider(
+    return Divider(
       height: 1,
       thickness: 1,
       indent: 50,
@@ -377,7 +419,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _row({
-    required IconData icon,
+    IconData? icon,
     required String title,
     String? value,
     VoidCallback? onTap,
@@ -391,10 +433,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
         child: Row(
           children: [
-            Icon(icon,
-                size: 20,
-                color: danger ? const Color(0xFFFF7A93) : AppColors.text2),
-            const SizedBox(width: 12),
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 20,
+                  color: danger ? const Color(0xFFFF7A93) : AppColors.text2),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: Text(
                 title,
@@ -405,10 +449,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 value,
                 style:
-                    const TextStyle(fontSize: 12, color: AppColors.text2),
+                    TextStyle(fontSize: 12, color: AppColors.text2),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right,
+              Icon(Icons.chevron_right,
                   size: 18, color: AppColors.text3),
             ],
           ],

@@ -30,7 +30,7 @@ Future<void> showPlatformPicker(
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(bottom: 10),
               child: Text('选择音乐源',
                   style: TextStyle(
@@ -61,18 +61,18 @@ Future<void> showPlatformPicker(
                         ),
                       ),
                       child: active
-                          ? const Icon(Icons.check,
+                          ? Icon(Icons.check,
                               size: 13, color: AppColors.accent)
                           : null,
                     ),
                     title: Text(p.platform,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 15, color: AppColors.text)),
                     subtitle: p.supportedSearchType.isEmpty
                         ? null
                         : Text(
                             p.supportedSearchType.join(' / '),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 11, color: AppColors.text2),
                           ),
                   );

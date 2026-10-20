@@ -61,7 +61,7 @@ class SongTile extends StatelessWidget {
                         : '${song.artist} · ${song.album}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: AppColors.text2),
+                    style: TextStyle(fontSize: 12, color: AppColors.text2),
                   ),
                 ],
               ),
@@ -71,7 +71,7 @@ class SongTile extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 6),
                 child: Text(
                   formatRawDuration(song.duration),
-                  style: const TextStyle(fontSize: 11, color: AppColors.text3),
+                  style: TextStyle(fontSize: 11, color: AppColors.text3),
                 ),
               ),
             if (trailing != null) ...[

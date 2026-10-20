@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../state/app_settings.dart';
 import '../state/auth_state.dart';
 import '../theme.dart';
 
@@ -33,6 +34,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final auth = context.watch<AuthState>();
     final loading = auth.status == AuthStatus.authenticating;
 
@@ -84,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 26),
-                    const Text(
+                    Text(
                       'Music',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -95,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       '登录后开始你的私人电台',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: AppColors.text2),
@@ -204,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 22),
-                    const Text(
+                    Text(
                       '音乐源由你的服务端提供',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11, color: AppColors.text3),
@@ -271,10 +274,10 @@ class _Field extends StatelessWidget {
       obscureText: obscure,
       textInputAction: textInputAction,
       onSubmitted: onSubmitted,
-      style: const TextStyle(color: AppColors.text, fontSize: 15),
+      style: TextStyle(color: AppColors.text, fontSize: 15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: AppColors.text3, fontSize: 14),
+        hintStyle: TextStyle(color: AppColors.text3, fontSize: 14),
         prefixIcon: Icon(icon, color: AppColors.text2, size: 20),
         suffixIcon: suffix,
         filled: true,
@@ -286,7 +289,7 @@ class _Field extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.accent, width: 1.2),
+          borderSide: BorderSide(color: AppColors.accent, width: 1.2),
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

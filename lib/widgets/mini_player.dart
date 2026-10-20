@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../screens/full_player_screen.dart';
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import 'cover_image.dart';
 
@@ -14,6 +15,8 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final player = context.watch<PlayerState>();
     final song = player.currentSong;
     if (song == null) return const SizedBox.shrink();
@@ -41,9 +44,15 @@ class MiniPlayer extends StatelessWidget {
               child: Container(
                 height: 58,
                 decoration: BoxDecoration(
-                  color: const Color(0x99101319),
+                  color: AppColors.isDark
+                      ? const Color(0x99101319)
+                      : const Color(0xE6FFFFFF),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0x26FFFFFF)),
+                  border: Border.all(
+                    color: AppColors.isDark
+                        ? const Color(0x26FFFFFF)
+                        : AppColors.border,
+                  ),
                 ),
                 child: Stack(
                   children: [
@@ -57,7 +66,7 @@ class MiniPlayer extends StatelessWidget {
                           value: player.progress / 100,
                           minHeight: 2,
                           backgroundColor: Colors.transparent,
-                          valueColor: const AlwaysStoppedAnimation<Color>(
+                          valueColor: AlwaysStoppedAnimation<Color>(
                               AppColors.accent),
                         ),
                       ),
@@ -81,7 +90,7 @@ class MiniPlayer extends StatelessWidget {
                                   song.title.isEmpty ? '未知歌曲' : song.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.text,
@@ -92,7 +101,7 @@ class MiniPlayer extends StatelessWidget {
                                   song.artist.isEmpty ? '未知歌手' : song.artist,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       fontSize: 11, color: AppColors.text2),
                                 ),
                               ],
@@ -143,7 +152,7 @@ class _MiniIconButton extends StatelessWidget {
         width: 40,
         height: 40,
         child: loading
-            ? const Center(
+            ? Center(
                 child: SizedBox(
                   width: 15,
                   height: 15,

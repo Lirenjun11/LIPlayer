@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/mini_player.dart';
@@ -19,6 +20,8 @@ class RecentPlaysScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final player = context.watch<PlayerState>();
     final songs = player.recentPlays;
     final currentKey = player.currentSong?.uniqueKey;
@@ -29,7 +32,7 @@ class RecentPlaysScreen extends StatelessWidget {
       extendBody: true,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        title: const Text(
+        title: Text(
           '最近播放',
           style: TextStyle(
             fontSize: 16,
@@ -38,7 +41,7 @@ class RecentPlaysScreen extends StatelessWidget {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
               size: 18, color: AppColors.text),
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -49,7 +52,7 @@ class RecentPlaysScreen extends StatelessWidget {
                 player.clearRecent();
                 AppToast.show(context, '已清空最近播放');
               },
-              child: const Text(
+              child: Text(
                 '清空',
                 style: TextStyle(fontSize: 13, color: AppColors.text2),
               ),
@@ -66,7 +69,7 @@ class RecentPlaysScreen extends StatelessWidget {
                     children: [
                       Text(
                         '共 ${songs.length} 首 · 最多保留 ${PlayerState.recentLimit} 首',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11, color: AppColors.text2),
                       ),
                       const Spacer(),
@@ -90,7 +93,7 @@ class RecentPlaysScreen extends StatelessWidget {
                         playing: song.uniqueKey == currentKey,
                         onTap: () => player.playNextAndPlay(song),
                         trailing: IconButton(
-                          icon: const Icon(Icons.add_circle_outline,
+                          icon: Icon(Icons.add_circle_outline,
                               size: 20, color: AppColors.accent),
                           onPressed: () {
                             final added = player.appendAll([song]);
@@ -114,7 +117,7 @@ class _EmptyRecent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

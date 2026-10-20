@@ -10,6 +10,7 @@ import '../models/music_platform.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_toast.dart';
@@ -398,6 +399,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -442,8 +445,16 @@ class _HomeScreenState extends State<HomeScreen> {
             height: barHeight,
             child: CustomPaint(
               painter: _PillPainter(
-                color: const Color(0xFF10131A),
-                borderColor: const Color(0x14FFFFFF),
+                color: AppColors.isDark
+                    ? const Color(0xFF10131A)
+                    : AppColors.bgCard,
+                borderColor: AppColors.border,
+                dropShadowColor: AppColors.isDark
+                    ? const Color(0xCC000000)
+                    : const Color(0x1A000000),
+                notchShadowColor: AppColors.isDark
+                    ? const Color(0x99000000)
+                    : const Color(0x14000000),
                 notchCenterY: notchCenterY,
                 notchRadius: buttonSize / 2 + 3,
               ),
@@ -518,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
       inner = CoverImage(url: song.artwork, width: 58, height: 58);
     } else if (playing) {
       inner = Container(
-        decoration: const BoxDecoration(gradient: kAccentGradient),
+        decoration: BoxDecoration(gradient: kAccentGradient),
         alignment: Alignment.center,
         child: const Icon(Icons.graphic_eq, size: 22, color: Colors.white),
       );
@@ -526,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
       inner = Container(
         color: AppColors.bgCard2,
         alignment: Alignment.center,
-        child: const Icon(Icons.play_arrow_rounded,
+        child: Icon(Icons.play_arrow_rounded,
             size: 24, color: AppColors.text2),
       );
     }
@@ -538,12 +549,19 @@ class _HomeScreenState extends State<HomeScreen> {
         height: 60,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0x26FFFFFF)),
-          boxShadow: const [
+          border: Border.all(
+            color: AppColors.isDark
+                ? const Color(0x26FFFFFF)
+                : const Color(0x14000000),
+          ),
+          boxShadow: [
             BoxShadow(
-              color: Color(0xCC000000),
-              blurRadius: 10,
-              offset: Offset(0, 2),
+              // A heavy black halo looks wrong on the light palette.
+              color: AppColors.isDark
+                  ? const Color(0x99000000)
+                  : const Color(0x1A000000),
+              blurRadius: AppColors.isDark ? 10 : 6,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -619,7 +637,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 2),
               child: Center(
                 child: _loadingSheets
-                    ? const Row(
+                    ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(
@@ -640,7 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                     : Text(
                         _sheetsEnd ? '已经到底啦' : '上滑加载更多',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11, color: AppColors.text3),
                       ),
               ),
@@ -657,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 10),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -704,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.graphic_eq, size: 14, color: AppColors.accent),
+            Icon(Icons.graphic_eq, size: 14, color: AppColors.accent),
             const SizedBox(width: 5),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 88),
@@ -712,14 +730,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 _currentPlatform.isEmpty ? '音乐源' : _currentPlatform,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppColors.text,
                 ),
               ),
             ),
-            const Icon(Icons.keyboard_arrow_down,
+            Icon(Icons.keyboard_arrow_down,
                 size: 16, color: AppColors.text2),
           ],
         ),
@@ -740,7 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(21),
             border: Border.all(color: AppColors.border),
           ),
-          child: const Row(
+          child: Row(
             children: [
               Icon(Icons.search, size: 18, color: AppColors.text3),
               SizedBox(width: 8),
@@ -816,7 +834,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
               color: AppColors.text,
@@ -828,7 +846,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: onTap,
               child: Text(
                 trailing,
-                style: const TextStyle(fontSize: 11, color: AppColors.text2),
+                style: TextStyle(fontSize: 11, color: AppColors.text2),
               ),
             ),
         ],
@@ -845,7 +863,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
           child: Text(
             group.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.text2,
@@ -879,7 +897,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Center(
         child: Text(text,
-            style: const TextStyle(fontSize: 13, color: AppColors.text2)),
+            style: TextStyle(fontSize: 13, color: AppColors.text2)),
       ),
     );
   }
@@ -895,7 +913,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               IconButton(
                 tooltip: '返回发现',
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                icon: Icon(Icons.arrow_back_ios_new_rounded,
                     size: 18, color: AppColors.text),
                 onPressed: _closeSearch,
               ),
@@ -910,7 +928,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.search,
+                      Icon(Icons.search,
                           size: 18, color: AppColors.text3),
                       const SizedBox(width: 8),
                       Expanded(
@@ -923,9 +941,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             _onKeywordChanged(value);
                           },
                           onSubmitted: (_) => _search(),
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14, color: AppColors.text),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             isDense: true,
                             border: InputBorder.none,
                             hintText: '搜索歌曲、歌手、专辑',
@@ -936,7 +954,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       if (_searchController.text.isNotEmpty)
                         IconButton(
-                          icon: const Icon(Icons.close,
+                          icon: Icon(Icons.close,
                               size: 17, color: AppColors.text3),
                           onPressed: () {
                             _searchController.clear();
@@ -953,7 +971,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => _search(),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                   child: Text(
                     '搜索',
@@ -985,7 +1003,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 _searching ? '搜索中...' : '共 ${_searchResults.length} 首',
-                style: const TextStyle(fontSize: 12, color: AppColors.text2),
+                style: TextStyle(fontSize: 12, color: AppColors.text2),
               ),
               const Spacer(),
               TextButton.icon(
@@ -1007,7 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: _searching
-                        ? const Row(
+                        ? Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
@@ -1025,7 +1043,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: AppColors.text2)),
                             ],
                           )
-                        : const Text(
+                        : Text(
                             '上滑加载更多',
                             style: TextStyle(
                                 fontSize: 11, color: AppColors.text3),
@@ -1038,7 +1056,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 song: song,
                 onTap: () => _playFromSearch(song),
                 trailing: IconButton(
-                  icon: const Icon(Icons.add_circle_outline,
+                  icon: Icon(Icons.add_circle_outline,
                       size: 22, color: AppColors.accent),
                   onPressed: () {
                     final player = context.read<PlayerState>();
@@ -1074,7 +1092,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(20, 14, 6, 4),
       child: Row(
         children: [
-          const Text(
+          Text(
             '我的',
             style: TextStyle(
               fontSize: 26,
@@ -1086,18 +1104,18 @@ class _HomeScreenState extends State<HomeScreen> {
           const Spacer(),
           IconButton(
             tooltip: '同步音源',
-            icon: const Icon(Icons.sync_rounded,
+            icon: Icon(Icons.sync_rounded,
                 size: 20, color: AppColors.text2),
             onPressed: _importSources,
           ),
           IconButton(
             tooltip: '搜索',
-            icon: const Icon(Icons.search, size: 21, color: AppColors.text2),
+            icon: Icon(Icons.search, size: 21, color: AppColors.text2),
             onPressed: _openSearch,
           ),
           IconButton(
             tooltip: '设置',
-            icon: const Icon(Icons.settings_outlined,
+            icon: Icon(Icons.settings_outlined,
                 size: 21, color: AppColors.text2),
             onPressed: _openSettings,
           ),
@@ -1273,11 +1291,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.card_giftcard,
+                child: Icon(Icons.card_giftcard,
                     size: 15, color: AppColors.accent),
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 '每日推荐',
                 style: TextStyle(
                   fontSize: 14,
@@ -1306,9 +1324,9 @@ class _HomeScreenState extends State<HomeScreen> {
               const Spacer(),
               Text(
                 '每天 $_recommendLimit 首 · 按口味生成',
-                style: const TextStyle(fontSize: 11, color: AppColors.text2),
+                style: TextStyle(fontSize: 11, color: AppColors.text2),
               ),
-              const Icon(Icons.chevron_right, size: 16, color: AppColors.text3),
+              Icon(Icons.chevron_right, size: 16, color: AppColors.text3),
             ],
           ),
         ),
@@ -1527,7 +1545,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 playing: active,
                 onTap: () => player.playAt(index),
                 trailing: IconButton(
-                  icon: const Icon(Icons.close,
+                  icon: Icon(Icons.close,
                       size: 18, color: AppColors.text3),
                   onPressed: () => player.removeFromPlaylist(index),
                 ),
@@ -1545,7 +1563,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 12, 10),
           child: Row(
             children: [
-              const Text(
+              Text(
                 '音乐源',
                 style: TextStyle(
                   fontSize: 17,
@@ -1556,7 +1574,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 8),
               Text(
                 '${_platforms.length} 个已启用',
-                style: const TextStyle(fontSize: 11, color: AppColors.text2),
+                style: TextStyle(fontSize: 11, color: AppColors.text2),
               ),
               const Spacer(),
               TextButton.icon(
@@ -1573,7 +1591,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       SliverToBoxAdapter(child: _platformList()),
-      const SliverToBoxAdapter(
+      SliverToBoxAdapter(
         child: Padding(
           padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: Text(
@@ -1643,7 +1661,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     '正在播放',
                     style: TextStyle(fontSize: 10, color: AppColors.text2),
                   ),
@@ -1652,7 +1670,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     song.title.isEmpty ? '未知歌曲' : song.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.text,
@@ -1664,7 +1682,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style:
-                        const TextStyle(fontSize: 11, color: AppColors.text2),
+                        TextStyle(fontSize: 11, color: AppColors.text2),
                   ),
                 ],
               ),
@@ -1849,7 +1867,7 @@ class _ToplistTile extends StatelessWidget {
               item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: AppColors.text,
@@ -1862,7 +1880,7 @@ class _ToplistTile extends StatelessWidget {
                   : '实时榜单',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: AppColors.text3),
+              style: TextStyle(fontSize: 10, color: AppColors.text3),
             ),
           ],
         ),
@@ -1935,7 +1953,7 @@ class _SheetTile extends StatelessWidget {
             sheet.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               height: 1.35,
               color: AppColors.text,
@@ -2026,7 +2044,7 @@ class _StatCard extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: AppColors.text,
@@ -2035,7 +2053,7 @@ class _StatCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '$count',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 11, color: AppColors.text2),
                   ),
                 ],
@@ -2109,7 +2127,7 @@ class _MineRow extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: AppColors.text,
@@ -2120,13 +2138,13 @@ class _MineRow extends StatelessWidget {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11, color: AppColors.text2),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
+              Icon(Icons.chevron_right,
                   size: 18, color: AppColors.text3),
             ],
           ),
@@ -2141,6 +2159,8 @@ class _MineRow extends StatelessWidget {
 class _PillPainter extends CustomPainter {
   final Color color;
   final Color borderColor;
+  final Color dropShadowColor;
+  final Color notchShadowColor;
   final double notchCenterY;
   final double notchRadius;
 
@@ -2149,6 +2169,8 @@ class _PillPainter extends CustomPainter {
     required this.borderColor,
     required this.notchCenterY,
     required this.notchRadius,
+    this.dropShadowColor = const Color(0xCC000000),
+    this.notchShadowColor = const Color(0x99000000),
   });
 
   @override
@@ -2166,7 +2188,7 @@ class _PillPainter extends CustomPainter {
     final pill = Path.combine(PathOperation.difference, bar, hole);
 
     // Drop shadow of the whole pill.
-    canvas.drawShadow(pill, const Color(0xCC000000), 12, false);
+    canvas.drawShadow(pill, dropShadowColor, AppColors.isDark ? 12 : 8, false);
 
     canvas.drawPath(pill, Paint()..color = color);
     canvas.drawPath(
@@ -2182,9 +2204,9 @@ class _PillPainter extends CustomPainter {
       Offset(size.width / 2, notchCenterY),
       notchRadius + 1,
       Paint()
-        ..color = const Color(0x99000000)
+        ..color = notchShadowColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 7
+        ..strokeWidth = AppColors.isDark ? 7 : 4
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
     );
   }
@@ -2192,6 +2214,9 @@ class _PillPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PillPainter oldDelegate) =>
       oldDelegate.color != color ||
+      oldDelegate.borderColor != borderColor ||
+      oldDelegate.dropShadowColor != dropShadowColor ||
+      oldDelegate.notchShadowColor != notchShadowColor ||
       oldDelegate.notchCenterY != notchCenterY ||
       oldDelegate.notchRadius != notchRadius;
 }
@@ -2210,7 +2235,7 @@ class _Tip extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       child: Text(text,
-          style: const TextStyle(fontSize: 12, color: AppColors.text2)),
+          style: TextStyle(fontSize: 12, color: AppColors.text2)),
     );
   }
 }
@@ -2227,11 +2252,11 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(icon,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 42, color: AppColors.text3, height: 1.2)),
           const SizedBox(height: 12),
           Text(text,
-              style: const TextStyle(fontSize: 13, color: AppColors.text2)),
+              style: TextStyle(fontSize: 13, color: AppColors.text2)),
         ],
       ),
     );

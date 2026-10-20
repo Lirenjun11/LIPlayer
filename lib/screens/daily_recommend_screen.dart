@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/mini_player.dart';
@@ -256,6 +257,8 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final player = context.watch<PlayerState>();
     final currentKey = player.currentSong?.uniqueKey;
 
@@ -264,7 +267,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
       extendBody: true,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        title: const Text(
+        title: Text(
           '每日推荐',
           style: TextStyle(
             fontSize: 16,
@@ -273,14 +276,14 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
               size: 18, color: AppColors.text),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           IconButton(
             tooltip: '重新生成',
-            icon: const Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 size: 20, color: AppColors.text2),
             onPressed: _loading ? null : () => _load(refresh: true),
           ),
@@ -291,7 +294,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
           SliverToBoxAdapter(child: _header()),
           // Keep the current list visible while a refresh is running.
           if (_loading && _songs.isNotEmpty)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
                 child: ClipRRect(
@@ -305,7 +308,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
               ),
             ),
           if (_songs.isEmpty && _loading)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 60),
                 child: Center(
@@ -338,7 +341,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
                   child: Text(
                     _error ?? '暂无推荐',
                     style:
-                        const TextStyle(fontSize: 12, color: AppColors.text2),
+                        TextStyle(fontSize: 12, color: AppColors.text2),
                   ),
                 ),
               ),
@@ -355,7 +358,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
                     playing: song.uniqueKey == currentKey,
                     onTap: () => player.playNextAndPlay(song),
                     trailing: IconButton(
-                      icon: const Icon(Icons.add_circle_outline,
+                      icon: Icon(Icons.add_circle_outline,
                           size: 20, color: AppColors.accent),
                       onPressed: () {
                         final added = player.appendAll([song]);
@@ -420,7 +423,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
                     children: [
                       Text(
                         '${_today.month} 月 ${_today.day} 日 · 周$weekday',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: AppColors.text,
@@ -431,7 +434,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
                         _songs.isEmpty
                             ? '每天 ${_limit} 首，按你的口味生成'
                             : '根据收听口味精选 ${_songs.length} 首',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11, color: AppColors.text2),
                       ),
                     ],

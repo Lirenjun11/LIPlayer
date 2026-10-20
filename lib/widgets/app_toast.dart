@@ -135,7 +135,7 @@ class _ToastView extends StatelessWidget {
                     Flexible(
                       child: Text(
                         message,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           height: 1.35,
                           fontWeight: FontWeight.w500,

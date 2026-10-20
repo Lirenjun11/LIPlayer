@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/song.dart';
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/cover_image.dart';
@@ -40,6 +41,8 @@ class CollectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final player = context.watch<PlayerState>();
     final currentKey = player.currentSong?.uniqueKey;
 
@@ -96,7 +99,7 @@ class CollectionScreen extends StatelessWidget {
                           children: [
                             Text(
                               '$label · ${songs.length} 首',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.text,
@@ -106,7 +109,7 @@ class CollectionScreen extends StatelessWidget {
                               const SizedBox(height: 3),
                               Text(
                                 '来自 $platform',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 11, color: AppColors.text2),
                               ),
                             ],
@@ -117,7 +120,7 @@ class CollectionScreen extends StatelessWidget {
                         onPressed: () => _addAll(context),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.text2,
-                          side: const BorderSide(color: AppColors.border),
+                          side: BorderSide(color: AppColors.border),
                           minimumSize: const Size(0, 36),
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           shape: RoundedRectangleBorder(
@@ -180,7 +183,7 @@ class CollectionScreen extends StatelessWidget {
                   playing: active,
                   onTap: () => player.playNextAndPlay(song),
                   trailing: IconButton(
-                    icon: const Icon(Icons.playlist_add_rounded,
+                    icon: Icon(Icons.playlist_add_rounded,
                         size: 20, color: AppColors.text2),
                     onPressed: () {
                       final added = player.appendAll([song]);

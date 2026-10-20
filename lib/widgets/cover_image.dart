@@ -71,7 +71,7 @@ class CoverImage extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [AppColors.bgCard2, AppColors.bgCard],
           begin: Alignment.topLeft,

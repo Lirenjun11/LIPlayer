@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/audio_quality.dart';
 import '../state/player_state.dart';
+import '../state/app_settings.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/cover_image.dart';
@@ -118,6 +119,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the palette (light/dark) changes.
+    context.watch<AppSettings>();
     final player = context.watch<PlayerState>();
     final song = player.currentSong;
 
@@ -225,14 +228,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded,
+            icon: Icon(Icons.keyboard_arrow_down_rounded,
                 size: 30, color: AppColors.text),
             onPressed: () => Navigator.of(context).pop(),
           ),
           Expanded(
             child: Column(
               children: [
-                const Text(
+                Text(
                   '正在播放',
                   style: TextStyle(
                     fontSize: 12,
@@ -246,7 +249,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   artist.isEmpty ? '未知歌手' : artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: AppColors.text2),
+                  style: TextStyle(fontSize: 11, color: AppColors.text2),
                 ),
               ],
             ),
@@ -264,7 +267,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               ),
               child: Text(
                 player.quality.label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   color: AppColors.accent,
@@ -299,7 +302,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 6),
                 child: Text(
                   '播放音质',
@@ -332,7 +335,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   ),
                   subtitle: Text(
                     option.description,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 11, color: AppColors.text2),
                   ),
                   onTap: () {
@@ -399,7 +402,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               color: AppColors.text,
@@ -411,7 +414,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: AppColors.text2),
+            style: TextStyle(fontSize: 12, color: AppColors.text2),
           ),
         ],
       ),
@@ -420,13 +423,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
 
   Widget _lyrics(PlayerState player) {
     if (player.lyricsLoading) {
-      return const Center(
+      return Center(
         child: Text('歌词加载中...',
             style: TextStyle(fontSize: 12, color: AppColors.text2)),
       );
     }
     if (player.lyrics.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('暂无歌词',
             style: TextStyle(fontSize: 12, color: AppColors.text2)),
       );
@@ -513,13 +516,13 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
               children: [
                 Text(
                   formatDuration(Duration(milliseconds: value.round())),
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 11, color: AppColors.text2),
                 ),
                 Text(
                   formatDuration(player.duration -
                       Duration(milliseconds: value.round())),
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 11, color: AppColors.text2),
                 ),
               ],
