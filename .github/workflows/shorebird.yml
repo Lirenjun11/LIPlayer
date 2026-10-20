@@ -82,7 +82,28 @@ jobs:
       # ---------- 基线包（首次安装用） ----------
       - name: Shorebird release
         if: steps.check.outputs.ready == 'true' && env.MODE == 'release'
-        run: shorebird release ios --no-codesign
+        run: |
+          set -euo pipefail
+          shorebird release ios --no-codesign
+
+          # --no-codesign 时 Shorebird 只产出 .xcarchive，不会生成 IPA。
+          # 这里用 ldid 伪签名后手工打成可侧载的 IPA。
+          if ! ls build/ios/ipa/*.ipa >/dev/null 2>&1; then
+            echo "::notice::未生成 IPA，正在从 xcarchive 打包…"
+            APP_DIR=$(find build/ios/archive -maxdepth 4 -type d -name "Runner.app" | head -1)
+            if [ -z "$APP_DIR" ]; then
+              echo "::error::找不到 Runner.app，无法打包 IPA"
+              exit 1
+            fi
+            brew install ldid >/dev/null 2>&1 || true
+            ldid -S "$APP_DIR/Runner" || true
+            rm -rf build/ios/ipa_payload
+            mkdir -p build/ios/ipa_payload/Payload build/ios/ipa
+            cp -R "$APP_DIR" build/ios/ipa_payload/Payload/
+            (cd build/ios/ipa_payload && zip -qry "$GITHUB_WORKSPACE/LIPlayer-shorebird.ipa" Payload)
+            mv "$GITHUB_WORKSPACE/LIPlayer-shorebird.ipa" build/ios/ipa/
+          fi
+          ls -lh build/ios/ipa
 
       # 安装只需要 IPA；dSYM 单独上传，避免下载包里混入几十兆符号文件。
       - name: Upload IPA
