@@ -45,12 +45,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _downloading = false;
   bool _checkingUpdate = false;
   String? _latestVersion;
+  int _ipaBytes = 0;
 
   @override
   void initState() {
     super.initState();
     _loadLimit();
     _checkLatest();
+    _refreshIpaCache();
+  }
+
+  Future<void> _refreshIpaCache() async {
+    final bytes = await ReleaseService().downloadedBytes();
+    if (mounted) setState(() => _ipaBytes = bytes);
+  }
+
+  Future<void> _clearIpaCache() async {
+    await ReleaseService().clearDownloads();
+    await _refreshIpaCache();
+    if (!mounted) return;
+    AppToast.show(context, '已删除本地安装包');
   }
 
   Future<void> _loadLimit() async {
@@ -147,6 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Navigator.of(context, rootNavigator: true).pop();
       progress.dispose();
       setState(() => _latestVersion = asset.version);
+      _refreshIpaCache();
       _showInstallOptions(file);
     } catch (e) {
       if (!mounted) return;
@@ -551,11 +566,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: _downloading ? '获取中…' : _updateLabel,
               onTap: _downloading ? null : _downloadLatest,
             ),
+            if (_ipaBytes > 0) ...[
+              _divider(),
+              _row(
+                title: '删除已下载安装包',
+                value:
+                    '${(_ipaBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                onTap: _clearIpaCache,
+                danger: true,
+              ),
+            ],
           ]),
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
             child: Text(
-              '下载后通过 TrollStore / 文件 安装；iOS 不允许 App 自行安装 IPA',
+              '安装包会保存在 App 内，安装后不会自动删除，可在此手动清理',
               style: TextStyle(fontSize: 11, color: AppColors.text3),
             ),
           ),

@@ -84,6 +84,38 @@ class ReleaseService {
     return match?.group(0) ?? '';
   }
 
+  /// Total size of IPA files left in the documents directory.
+  Future<int> downloadedBytes() async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      if (!await directory.exists()) return 0;
+      var total = 0;
+      await for (final entity in directory.list()) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.ipa')) {
+          total += await entity.length();
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Removes downloaded IPAs; the installed app is unaffected.
+  Future<void> clearDownloads() async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      if (!await directory.exists()) return;
+      await for (final entity in directory.list()) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.ipa')) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
   /// Downloads [asset] into the app's documents directory.
   Future<File> download(
     ReleaseAsset asset, {
