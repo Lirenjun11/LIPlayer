@@ -92,6 +92,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '新版本 $latest';
   }
 
+  /// Latest version already installed: no point downloading again unless the
+  /// file was cleaned up and the user wants it back.
+  bool get _isLatest =>
+      !_checkingUpdate &&
+      (_latestVersion ?? '').isNotEmpty &&
+      _latestVersion == kAppVersion;
+
+  bool get _canDownload => !_downloading && (!_isLatest || _ipaBytes == 0);
+
   // ---- Actions -------------------------------------------------------------
 
   /// Downloads the newest release IPA and hands it to another app.
@@ -564,7 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _row(
               title: '下载最新安装包',
               value: _downloading ? '获取中…' : _updateLabel,
-              onTap: _downloading ? null : _downloadLatest,
+              onTap: _canDownload ? _downloadLatest : null,
             ),
             if (_ipaBytes > 0) ...[
               _divider(),
