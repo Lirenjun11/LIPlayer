@@ -140,6 +140,10 @@ jobs:
               echo "::notice title=跳过热更新::还没有基线包，请先手动运行一次 mode=release"
               exit 0
             fi
+            if echo "$output" | grep -qiE "asset changes"; then
+              echo "::notice title=需要重新发基线::本次改动包含资源变化（如新增图标），无法只发补丁。请提升 pubspec 版本号后运行 mode=release"
+              exit 0
+            fi
             # Publish the failure log so it can be inspected without CI access.
             printf '%s\n' "$output" > patch-error.log
             git config user.name "github-actions[bot]"
