@@ -6,6 +6,7 @@ import '../state/player_state.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import 'cover_image.dart';
+import 'song_actions.dart';
 
 /// A single row in a song list.
 class SongTile extends StatelessWidget {
@@ -13,7 +14,15 @@ class SongTile extends StatelessWidget {
   final bool playing;
   final bool showDuration;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  /// Renders the trailing "⋯" button that opens the action sheet.
+  final bool showActions;
   final Widget? trailing;
+
+  /// Optional extra entry in the action sheet (e.g. "从歌单移除").
+  final String? removeLabel;
+  final VoidCallback? onRemove;
 
   const SongTile({
     super.key,
@@ -21,13 +30,18 @@ class SongTile extends StatelessWidget {
     this.playing = false,
     this.showDuration = true,
     this.onTap,
+    this.onLongPress,
+    this.showActions = true,
     this.trailing,
+    this.removeLabel,
+    this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -89,6 +103,19 @@ class SongTile extends StatelessWidget {
               const SizedBox(width: 4),
               trailing!,
             ],
+            if (showActions)
+              IconButton(
+                tooltip: '更多',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.more_vert,
+                    size: 18, color: AppColors.text3),
+                onPressed: () => showSongActions(
+                  context,
+                  song,
+                  removeLabel: removeLabel,
+                  onRemove: onRemove,
+                ),
+              ),
           ],
         ),
       ),

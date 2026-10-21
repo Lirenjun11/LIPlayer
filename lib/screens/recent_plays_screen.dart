@@ -92,15 +92,6 @@ class RecentPlaysScreen extends StatelessWidget {
                         song: song,
                         playing: song.uniqueKey == currentKey,
                         onTap: () => player.playNextAndPlay(song),
-                        trailing: IconButton(
-                          icon: Icon(Icons.add_circle_outline,
-                              size: 20, color: AppColors.accent),
-                          onPressed: () {
-                            final added = player.appendAll([song]);
-                            AppToast.show(
-                                context, added == 0 ? '已在播放队列' : '已添加到队列');
-                          },
-                        ),
                       );
                     },
                   ),

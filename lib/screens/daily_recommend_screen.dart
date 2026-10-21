@@ -41,11 +41,16 @@ class DailyRecommendScreen extends StatefulWidget {
   final String platform;
   final List<Song> recentPlays;
 
+  /// Limit already known by the caller, so the header does not flash the
+  /// default (30) before the stored value is read.
+  final int initialLimit;
+
   const DailyRecommendScreen({
     super.key,
     required this.api,
     required this.platform,
     this.recentPlays = const [],
+    this.initialLimit = defaultLimit,
   });
 
   @override
@@ -56,7 +61,7 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
   static const String _keyPrefix = 'daily_recommend';
 
   final List<Song> _songs = [];
-  int _limit = DailyRecommendScreen.defaultLimit;
+  late int _limit = widget.initialLimit;
   bool _loading = true;
   String? _error;
 
@@ -357,15 +362,6 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
                     song: song,
                     playing: song.uniqueKey == currentKey,
                     onTap: () => player.playNextAndPlay(song),
-                    trailing: IconButton(
-                      icon: Icon(Icons.add_circle_outline,
-                          size: 20, color: AppColors.accent),
-                      onPressed: () {
-                        final added = player.appendAll([song]);
-                        AppToast.show(
-                            context, added == 0 ? '已在播放队列' : '已添加到队列');
-                      },
-                    ),
                   ),
                 );
               },
@@ -386,13 +382,28 @@ class _DailyRecommendScreenState extends State<DailyRecommendScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(18, 18, 16, 16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF2A1830), Color(0xFF141A2A)],
+            colors: AppColors.isDark
+                ? const [Color(0xFF2A1830), Color(0xFF141A2A)]
+                : const [Color(0xFFFFFFFF), Color(0xFFFDF2F6)],
           ),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0x1FFFFFFF)),
+          border: Border.all(
+            color: AppColors.isDark
+                ? const Color(0x1FFFFFFF)
+                : const Color(0x0F000000),
+          ),
+          boxShadow: AppColors.isDark
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x0F000000),
+                    blurRadius: 14,
+                    offset: Offset(0, 6),
+                  ),
+                ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

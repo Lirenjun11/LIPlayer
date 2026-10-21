@@ -182,15 +182,6 @@ class CollectionScreen extends StatelessWidget {
                   song: song,
                   playing: active,
                   onTap: () => player.playNextAndPlay(song),
-                  trailing: IconButton(
-                    icon: Icon(Icons.playlist_add_rounded,
-                        size: 20, color: AppColors.text2),
-                    onPressed: () {
-                      final added = player.appendAll([song]);
-                      AppToast.show(
-                          context, added == 0 ? '已在播放队列' : '已添加到队列末尾');
-                    },
-                  ),
                 ),
               );
             },

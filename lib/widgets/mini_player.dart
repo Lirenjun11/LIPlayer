@@ -29,11 +29,14 @@ class MiniPlayer extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x8C000000),
-                blurRadius: 20,
-                offset: Offset(0, 8),
+                // Heavy black shadow looks detached on the light palette.
+                color: AppColors.isDark
+                    ? const Color(0x8C000000)
+                    : const Color(0x1A000000),
+                blurRadius: AppColors.isDark ? 20 : 14,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -51,7 +54,7 @@ class MiniPlayer extends StatelessWidget {
                   border: Border.all(
                     color: AppColors.isDark
                         ? const Color(0x26FFFFFF)
-                        : AppColors.border,
+                        : const Color(0x14000000),
                   ),
                 ),
                 child: Stack(

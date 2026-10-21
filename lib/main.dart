@@ -8,6 +8,7 @@ import 'app.dart';
 import 'services/api_service.dart';
 import 'state/app_settings.dart';
 import 'state/auth_state.dart';
+import 'state/library_state.dart';
 import 'state/player_state.dart';
 
 Future<void> main() async {
@@ -34,9 +35,11 @@ Future<void> main() async {
   final auth = AuthState(api);
   final player = PlayerState(api);
   final settings = AppSettings();
+  final library = LibraryState();
   // Restore the queue, play mode and playback position from the last session.
   await player.restoreState();
   await settings.load();
+  await library.load();
   api.onUnauthorized = auth.handleUnauthorized;
 
   runApp(
@@ -46,6 +49,7 @@ Future<void> main() async {
         ChangeNotifierProvider<AuthState>.value(value: auth),
         ChangeNotifierProvider<PlayerState>.value(value: player),
         ChangeNotifierProvider<AppSettings>.value(value: settings),
+        ChangeNotifierProvider<LibraryState>.value(value: library),
       ],
       child: const MusicPlayerApp(),
     ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/audio_quality.dart';
+import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/app_settings.dart';
 import '../theme.dart';
@@ -258,6 +259,30 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                   style: TextStyle(fontSize: 11, color: AppColors.text2),
                 ),
               ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              final song = player.currentSong;
+              if (song == null) return;
+              context.read<LibraryState>().toggleFavorite(song);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Builder(
+                builder: (context) {
+                  final current = player.currentSong;
+                  final favourited = current != null &&
+                      context.watch<LibraryState>().isFavorite(current);
+                  return Icon(
+                    Icons.favorite,
+                    size: 19,
+                    color: favourited
+                        ? const Color(0xFFFF7A93)
+                        : AppColors.text3,
+                  );
+                },
+              ),
             ),
           ),
           GestureDetector(

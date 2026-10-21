@@ -85,11 +85,8 @@ Future<void> showQueueSheet(BuildContext context) {
                             player.playAt(index);
                             Navigator.of(context).pop();
                           },
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete_outline,
-                                size: 20, color: AppColors.text2),
-                            onPressed: () => player.removeFromPlaylist(index),
-                          ),
+                          removeLabel: '从播放队列移除',
+                          onRemove: () => player.removeFromPlaylist(index),
                         );
                       },
                     ),

@@ -10,6 +10,7 @@ import '../models/music_collection.dart';
 import '../models/music_platform.dart';
 import '../models/song.dart';
 import '../services/api_service.dart';
+import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/app_settings.dart';
 import '../theme.dart';
@@ -17,13 +18,18 @@ import '../utils/format.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/platform_picker.dart';
+import '../widgets/song_actions.dart';
 import '../widgets/queue_sheet.dart';
 import '../widgets/song_tile.dart';
 import 'collection_screen.dart';
 import 'daily_recommend_screen.dart';
+import 'favorites_screen.dart';
 import 'full_player_screen.dart';
+import 'manage_playlists_screen.dart';
+import 'playlist_detail_screen.dart';
 import 'recent_plays_screen.dart';
 import 'settings_screen.dart';
+import 'toplists_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -140,7 +146,8 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _currentPlatform = savedPlatform);
       }
 
-      final rawDiscovery = prefs.getString(_discoveryCacheKey(_currentPlatform));
+      final rawDiscovery =
+          prefs.getString(_discoveryCacheKey(_currentPlatform));
       if (rawDiscovery == null || rawDiscovery.isEmpty) return;
       final map = jsonDecode(rawDiscovery) as Map<String, dynamic>;
       final groups = (map['toplists'] as List? ?? const [])
@@ -158,8 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       final sheets = (map['sheets'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
-          .map((e) =>
-              MusicCollection.fromJson(e, platform: _currentPlatform))
+          .map((e) => MusicCollection.fromJson(e, platform: _currentPlatform))
           .toList();
       if (!mounted) return;
       if (groups.isNotEmpty || sheets.isNotEmpty) {
@@ -383,8 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final result = await _api.search(_currentPlatform, keyword, page);
       if (!mounted) return;
       final known = _searchResults.map((s) => s.uniqueKey).toSet();
-      final fresh =
-          result.items.where((s) => known.add(s.uniqueKey)).toList();
+      final fresh = result.items.where((s) => known.add(s.uniqueKey)).toList();
       setState(() {
         _searchPage = page;
         _searchEnd = result.isEnd || (more && fresh.isEmpty);
@@ -474,10 +479,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSearch() {
-    setState(() {
-      _tab = 0;
-      _searchOpen = true;
-    });
+    // Keep the current tab: closing search must return to where the user was
+    // (opening it from 我的 used to jump back to 发现).
+    setState(() => _searchOpen = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
     });
@@ -652,8 +656,7 @@ class _HomeScreenState extends State<HomeScreen> {
       inner = Container(
         color: AppColors.bgCard2,
         alignment: Alignment.center,
-        child: Icon(Icons.play_arrow_rounded,
-            size: 24, color: AppColors.text2),
+        child: Icon(Icons.play_arrow_rounded, size: 24, color: AppColors.text2),
       );
     }
 
@@ -766,15 +769,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           SizedBox(width: 8),
                           Text(
                             '正在加载更多',
-                            style: TextStyle(
-                                fontSize: 11, color: AppColors.text2),
+                            style:
+                                TextStyle(fontSize: 11, color: AppColors.text2),
                           ),
                         ],
                       )
                     : Text(
                         _sheetsEnd ? '已经到底啦' : '上滑加载更多',
-                        style: TextStyle(
-                            fontSize: 11, color: AppColors.text3),
+                        style: TextStyle(fontSize: 11, color: AppColors.text3),
                       ),
               ),
             ),
@@ -852,8 +854,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            Icon(Icons.keyboard_arrow_down,
-                size: 16, color: AppColors.text2),
+            Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.text2),
           ],
         ),
       ),
@@ -925,8 +926,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 6,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: BoxDecoration(
-                  color:
-                      i == _bannerIndex ? AppColors.accent : AppColors.text3,
+                  color: i == _bannerIndex ? AppColors.accent : AppColors.text3,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -937,7 +937,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionHeader(String title, {String? trailing, VoidCallback? onTap}) {
+  Widget _sectionHeader(String title,
+      {String? trailing, VoidCallback? onTap, Widget? action}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
       child: Row(
@@ -968,6 +969,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(fontSize: 11, color: AppColors.text2),
               ),
             ),
+          if (action != null) ...[
+            const SizedBox(width: 8),
+            action,
+          ],
         ],
       ),
     );
@@ -1000,8 +1005,8 @@ class _HomeScreenState extends State<HomeScreen> {
               final item = group.items[index];
               return _ToplistTile(
                 item: item,
-                onTap: () => _openCollection(
-                    item, 'api/external/toplist-detail', '排行榜'),
+                onTap: () =>
+                    _openCollection(item, 'api/external/toplist-detail', '排行榜'),
               );
             },
           ),
@@ -1015,8 +1020,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Center(
-        child: Text(text,
-            style: TextStyle(fontSize: 13, color: AppColors.text2)),
+        child:
+            Text(text, style: TextStyle(fontSize: 13, color: AppColors.text2)),
       ),
     );
   }
@@ -1047,8 +1052,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.search,
-                          size: 18, color: AppColors.text3),
+                      Icon(Icons.search, size: 18, color: AppColors.text3),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
@@ -1060,14 +1064,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             _onKeywordChanged(value);
                           },
                           onSubmitted: (_) => _search(),
-                          style: TextStyle(
-                              fontSize: 14, color: AppColors.text),
+                          style: TextStyle(fontSize: 14, color: AppColors.text),
                           decoration: InputDecoration(
                             isDense: true,
                             border: InputBorder.none,
                             hintText: '搜索歌曲、歌手、专辑',
-                            hintStyle: TextStyle(
-                                color: AppColors.text3, fontSize: 13),
+                            hintStyle:
+                                TextStyle(color: AppColors.text3, fontSize: 13),
                           ),
                         ),
                       ),
@@ -1158,14 +1161,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               SizedBox(width: 8),
                               Text('正在加载更多',
                                   style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.text2)),
+                                      fontSize: 11, color: AppColors.text2)),
                             ],
                           )
                         : Text(
                             '上滑加载更多',
-                            style: TextStyle(
-                                fontSize: 11, color: AppColors.text3),
+                            style:
+                                TextStyle(fontSize: 11, color: AppColors.text3),
                           ),
                   ),
                 );
@@ -1174,14 +1176,6 @@ class _HomeScreenState extends State<HomeScreen> {
               return SongTile(
                 song: song,
                 onTap: () => _playFromSearch(song),
-                trailing: IconButton(
-                  icon: Icon(Icons.add_circle_outline,
-                      size: 22, color: AppColors.accent),
-                  onPressed: () {
-                    final player = context.read<PlayerState>();
-                    player.addToPlaylist(song);
-                  },
-                ),
               );
             },
           ),
@@ -1223,8 +1217,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const Spacer(),
           IconButton(
             tooltip: '同步音源',
-            icon: Icon(Icons.sync_rounded,
-                size: 20, color: AppColors.text2),
+            icon: Icon(Icons.sync_rounded, size: 20, color: AppColors.text2),
             onPressed: _importSources,
           ),
           IconButton(
@@ -1234,8 +1227,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(
             tooltip: '设置',
-            icon: Icon(Icons.settings_outlined,
-                size: 21, color: AppColors.text2),
+            icon:
+                Icon(Icons.settings_outlined, size: 21, color: AppColors.text2),
             onPressed: _openSettings,
           ),
         ],
@@ -1246,137 +1239,261 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _profileCard(PlayerState player) {
     final song = player.currentSong;
     final hasArt = song != null && song.artwork.isNotEmpty;
+    final dark = AppColors.isDark;
+    final titleColor = dark ? Colors.white : AppColors.text;
+    final subColor = dark ? const Color(0xCCFFFFFF) : AppColors.text2;
+    final queueIconColor = dark ? Colors.white : AppColors.text;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Container(
-        height: 122,
-        clipBehavior: Clip.antiAlias,
+        height: 128,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: dark
+              ? const [
+                  BoxShadow(
+                    color: Color(0x59000000),
+                    blurRadius: 26,
+                    offset: Offset(0, 12),
+                  ),
+                ]
+              : null,
         ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (hasArt)
-              ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                child: CoverImage(url: song.artwork),
-              )
-            else
-              const DecoratedBox(
+        // Painted above every child: covers the anti-aliased rim left by the
+        // rounded clip, which otherwise shows up as a thin grey outline.
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: dark ? const Color(0x1FFFFFFF) : Colors.white,
+            width: 1.2,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 0. Opaque base: nothing bleeds through the rounded clip.
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: dark ? const Color(0xFF0B0C12) : Colors.white,
+                ),
+              ),
+              // 1. Blurred artwork. It must be scaled far beyond the blur
+              //    radius, otherwise the faded image edge is what gets clipped
+              //    and shows up as a thin grey ring around the card.
+              if (hasArt)
+                RepaintBoundary(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Transform.scale(
+                      scale: 2.6,
+                      child: CoverImage(url: song.artwork),
+                    ),
+                  ),
+                )
+              else
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF3A2440), Color(0xFF1A2433)],
+                    ),
+                  ),
+                ),
+              // 2. Milky tint on top of the blurred artwork. Light mode uses a
+              //    flat tint: a directional gradient made the left edge more
+              //    transparent than the centre, so the anti-aliased clip drew
+              //    a visible darker line along the border.
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: dark
+                      ? const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0x990A0B10), Color(0xB30A0B10)],
+                        )
+                      : null,
+                  color: dark ? null : const Color(0xC7FFFFFF),
+                ),
+              ),
+              // 3. Diagonal sheen so the surface reads as glass.
+              DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF3A2440), Color(0xFF1A2433)],
+                    colors: dark
+                        ? const [Color(0x14FFFFFF), Color(0x00FFFFFF)]
+                        : const [Color(0x59FFFFFF), Color(0x00FFFFFF)],
+                    stops: const [0.0, 0.6],
                   ),
                 ),
               ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [Color(0xD90A0B10), Color(0x730A0B10)],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
+              // Thin accent line along the bottom edge (dark mode only — on the
+              // light palette it reads as a bright red underline).
+              if (dark)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    height: 2,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: kAccentGradient,
-                      border: Border.all(color: const Color(0x33FFFFFF)),
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0x00FF4D6D),
+                          AppColors.accent,
+                          AppColors.accent2,
+                          const Color(0x009B51E0),
+                        ],
+                      ),
                     ),
-                    child: const Icon(Icons.music_note,
-                        size: 26, color: Colors.white),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              '音乐爱好者',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Avatar: live artwork while playing, gradient note otherwise.
+                    Container(
+                      width: 56,
+                      height: 56,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: kAccentGradient,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x4DFF4D6D),
+                            blurRadius: 14,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: hasArt
+                            ? CoverImage(
+                                url: song.artwork, width: 52, height: 52)
+                            : Container(
+                                color: dark
+                                    ? const Color(0xFF15161C)
+                                    : const Color(0xFFF2F3F7),
+                                alignment: Alignment.center,
+                                child: Icon(Icons.music_note,
+                                    size: 26, color: titleColor),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFFFFD37A), Color(0xFFE8A33D)],
-                                ),
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                              child: const Text(
-                                'VIP',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF3A2400),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: () => setState(() => _tab = 0),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Flexible(
-                                child: Text(
-                                  _currentPlatform.isEmpty
-                                      ? '去发现今日推荐'
-                                      : '$_currentPlatform · 去发现今日推荐',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xCCFFFFFF),
+                              Text(
+                                '音乐爱好者',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: titleColor,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              // VIP badge with a soft glow.
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xFFFFD37A),
+                                      Color(0xFFE8A33D)
+                                    ],
+                                  ),
+                                  borderRadius:
+                                      BorderRadius.all(Radius.circular(7)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0x59E8A33D),
+                                      blurRadius: 8,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 1),
+                                  child: Text(
+                                    'VIP',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF3A2400),
+                                    ),
                                   ),
                                 ),
                               ),
-                              const Icon(Icons.chevron_right,
-                                  size: 14, color: Color(0xCCFFFFFF)),
                             ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap: () => setState(() => _tab = 0),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _currentPlatform.isEmpty
+                                        ? '去发现今日推荐'
+                                        : '$_currentPlatform · 去发现今日推荐',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: subColor,
+                                    ),
+                                  ),
+                                ),
+                                Icon(Icons.chevron_right,
+                                    size: 14, color: subColor),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '同步音源',
-                    icon: const Icon(Icons.sync_rounded,
-                        size: 20, color: Colors.white),
-                    onPressed: _importSources,
-                  ),
-                  IconButton(
-                    tooltip: '播放队列',
-                    icon: const Icon(Icons.mail_outline,
-                        size: 20, color: Colors.white),
-                    onPressed: () => showQueueSheet(context),
-                  ),
-                ],
+                    // Queue shortcut with a frosted round backdrop.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => showQueueSheet(context),
+                      child: Tooltip(
+                        message: '播放队列',
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: dark
+                                ? const Color(0x26FFFFFF)
+                                : const Color(0x0F000000),
+                            border: Border.all(
+                              color: dark
+                                  ? const Color(0x33FFFFFF)
+                                  : const Color(0x1A000000),
+                            ),
+                          ),
+                          child: Icon(Icons.queue_music_rounded,
+                              size: 20, color: queueIconColor),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1393,6 +1510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 api: _api,
                 platform: _currentPlatform,
                 recentPlays: context.read<PlayerState>().recentPlays,
+                initialLimit: _recommendLimit,
               ),
             ),
           );
@@ -1429,8 +1547,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
                   color: const Color(0xFF3D2A00),
                   borderRadius: BorderRadius.circular(6),
@@ -1539,8 +1656,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Widget> _musicSection(PlayerState player) {
-    final toplistCount = _toplistGroups
-        .fold<int>(0, (sum, group) => sum + group.items.length);
+    final toplistCount =
+        _toplistGroups.fold<int>(0, (sum, group) => sum + group.items.length);
     return [
       SliverToBoxAdapter(
         child: Padding(
@@ -1555,8 +1672,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.favorite_rounded,
                       color: const Color(0xFFFF7A93),
                       label: '收藏',
-                      count: player.playlist.length,
-                      onTap: () => showQueueSheet(context),
+                      count: context.watch<LibraryState>().favorites.length,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const FavoritesScreen()),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _StatCard(
@@ -1574,11 +1694,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     _StatCard(
-                      icon: Icons.library_music_rounded,
+                      icon: Icons.history_rounded,
                       color: const Color(0xFF7BD8C0),
-                      label: '歌单',
-                      count: _sheets.length,
-                      onTap: () => setState(() => _tab = 0),
+                      label: '最近',
+                      count: player.recentPlays.length,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const RecentPlaysScreen()),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _StatCard(
@@ -1586,7 +1709,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: const Color(0xFFC8A2FF),
                       label: '榜单',
                       count: toplistCount,
-                      onTap: () => setState(() => _tab = 0),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ToplistsScreen(
+                            api: _api,
+                            platform: _currentPlatform,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1597,33 +1727,64 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       SliverToBoxAdapter(
         child: _sectionHeader(
-          '我的音乐',
-          trailing: player.playlist.isEmpty ? null : '${player.playlist.length} 首',
-          onTap: player.playlist.isEmpty ? null : () => showQueueSheet(context),
-        ),
-      ),
-      SliverToBoxAdapter(
-        child: _MineRow(
-          icon: Icons.favorite,
-          iconColor: const Color(0xFFFF7A93),
-          title: '我喜欢的音乐',
-          subtitle: '${player.playlist.length} 首',
-          onTap: () => showQueueSheet(context),
-        ),
-      ),
-      SliverToBoxAdapter(
-        child: _MineRow(
-          icon: Icons.history_rounded,
-          iconColor: const Color(0xFF7A8CFF),
-          title: '最近播放',
-          subtitle: player.recentPlays.isEmpty
-              ? '暂无播放记录'
-              : '${player.recentPlays.length} 首 · ${player.recentPlays.first.title.isEmpty ? '未知歌曲' : player.recentPlays.first.title}',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const RecentPlaysScreen()),
+          '我的歌单',
+          trailing: '${context.watch<LibraryState>().playlists.length} 个',
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _createPlaylist,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.accent.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Icon(Icons.add, size: 16, color: AppColors.accent),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const ManagePlaylistsScreen()),
+                ),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.bgCard2,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Icon(Icons.tune_rounded,
+                      size: 15, color: AppColors.text2),
+                ),
+              ),
+            ],
           ),
         ),
       ),
+      if (context.watch<LibraryState>().playlists.isEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+            child: Text(
+              '还没有歌单，点击右上角「+」创建',
+              style: TextStyle(fontSize: 11, color: AppColors.text3),
+            ),
+          ),
+        )
+      else
+        SliverToBoxAdapter(child: _playlistList()),
       SliverToBoxAdapter(
         child: _MineRow(
           icon: Icons.sync_alt_rounded,
@@ -1643,10 +1804,9 @@ class _HomeScreenState extends State<HomeScreen> {
       SliverToBoxAdapter(
         child: _sectionHeader(
           '播放队列',
-          trailing: player.playlist.isEmpty ? null : '${player.playlist.length} 首',
-          onTap: player.playlist.isEmpty
-              ? null
-              : () => showQueueSheet(context),
+          trailing:
+              player.playlist.isEmpty ? null : '${player.playlist.length} 首',
+          onTap: player.playlist.isEmpty ? null : () => showQueueSheet(context),
         ),
       ),
       if (player.playlist.isEmpty)
@@ -1668,11 +1828,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 song: song,
                 playing: active,
                 onTap: () => player.playAt(index),
-                trailing: IconButton(
-                  icon: Icon(Icons.close,
-                      size: 18, color: AppColors.text3),
-                  onPressed: () => player.removeFromPlaylist(index),
-                ),
+                removeLabel: '从播放队列移除',
+                onRemove: () => player.removeFromPlaylist(index),
               ),
             );
           },
@@ -1733,8 +1890,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _platforms = platforms;
-        if ((_currentPlatform.isEmpty || platforms
-                .every((p) => p.platform != _currentPlatform)) &&
+        if ((_currentPlatform.isEmpty ||
+                platforms.every((p) => p.platform != _currentPlatform)) &&
             platforms.isNotEmpty) {
           _currentPlatform = platforms.first.platform;
         }
@@ -1746,6 +1903,50 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       _toast('同步失败: $e');
     }
+  }
+
+  /// Read-only playlist list; ordering is handled in the manage screen.
+  Widget _playlistList() {
+    final playlists = context.watch<LibraryState>().playlists;
+    return Column(
+      children: [
+        for (final playlist in playlists)
+          _MineRow(
+            key: ValueKey(playlist.id),
+            icon: Icons.queue_music_rounded,
+            iconColor: const Color(0xFFC8A2FF),
+            title: playlist.name,
+            subtitle: '${playlist.songs.length} 首',
+            leading:
+                playlist.songs.isEmpty || playlist.songs.first.artwork.isEmpty
+                    ? null
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CoverImage(
+                            url: playlist.songs.first.artwork,
+                            width: 40,
+                            height: 40),
+                      ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PlaylistDetailScreen(playlistId: playlist.id),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _createPlaylist() async {
+    final name = await promptPlaylistName(context);
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    final playlist = await context.read<LibraryState>().createPlaylist(name);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: playlist.id),
+      ),
+    );
   }
 
   Future<void> _openSettings() async {
@@ -1764,18 +1965,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _nowPlayingCard(PlayerState player) {
     final song = player.currentSong!;
+    final dark = AppColors.isDark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF221726), Color(0xFF161822)],
+            colors: dark
+                ? const [Color(0xFF221726), Color(0xFF161822)]
+                : const [Color(0xFFFFFFFF), Color(0xFFFDF3F6)],
           ),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: dark ? AppColors.border : const Color(0x0F000000),
+          ),
+          boxShadow: dark
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x0F000000),
+                    blurRadius: 14,
+                    offset: Offset(0, 6),
+                  ),
+                ],
         ),
         child: Row(
           children: [
@@ -1805,8 +2020,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     song.artist.isEmpty ? '未知歌手' : song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 11, color: AppColors.text2),
+                    style: TextStyle(fontSize: 11, color: AppColors.text2),
                   ),
                 ],
               ),
@@ -1847,8 +2061,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => _selectPlatform(_platforms[i]),
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 13),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                   child: Row(
                     children: [
                       Icon(
@@ -1912,7 +2126,8 @@ class _BannerCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               CoverImage(url: item.artwork),
-              const DecoratedBox(decoration: BoxDecoration(gradient: kCoverFade)),
+              const DecoratedBox(
+                  decoration: BoxDecoration(gradient: kCoverFade)),
               Positioned(
                 left: 16,
                 right: 16,
@@ -2177,8 +2392,7 @@ class _StatCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '$count',
-                    style: TextStyle(
-                        fontSize: 11, color: AppColors.text2),
+                    style: TextStyle(fontSize: 11, color: AppColors.text2),
                   ),
                 ],
               ),
@@ -2208,12 +2422,17 @@ class _MineRow extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onTap;
 
+  /// Overrides the default icon tile (e.g. a playlist cover).
+  final Widget? leading;
+
   const _MineRow({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.leading,
   });
 
   @override
@@ -2231,16 +2450,17 @@ class _MineRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, size: 20, color: iconColor),
-              ),
+              leading ??
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, size: 20, color: iconColor),
+                  ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -2262,14 +2482,12 @@ class _MineRow extends StatelessWidget {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 11, color: AppColors.text2),
+                      style: TextStyle(fontSize: 11, color: AppColors.text2),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right,
-                  size: 18, color: AppColors.text3),
+              Icon(Icons.chevron_right, size: 18, color: AppColors.text3),
             ],
           ),
         ),
@@ -2358,8 +2576,7 @@ class _Tip extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
-      child: Text(text,
-          style: TextStyle(fontSize: 12, color: AppColors.text2)),
+      child: Text(text, style: TextStyle(fontSize: 12, color: AppColors.text2)),
     );
   }
 }
@@ -2376,11 +2593,10 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(icon,
-              style: TextStyle(
-                  fontSize: 42, color: AppColors.text3, height: 1.2)),
+              style:
+                  TextStyle(fontSize: 42, color: AppColors.text3, height: 1.2)),
           const SizedBox(height: 12),
-          Text(text,
-              style: TextStyle(fontSize: 13, color: AppColors.text2)),
+          Text(text, style: TextStyle(fontSize: 13, color: AppColors.text2)),
         ],
       ),
     );
