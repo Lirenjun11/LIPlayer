@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +36,18 @@ class PlayerState extends ChangeNotifier {
 
   PlayerState(this.api) {
     _wireStreams();
+    // Coming back from the background: the engine may have skipped tracks via
+    // the lock screen while Dart was paused, so re-read the live index.
+    _lifecycle = AppLifecycleListener(onResume: _reconcileIndex);
+  }
+
+  late final AppLifecycleListener _lifecycle;
+
+  void _reconcileIndex() {
+    final liveIndex = _player.currentIndex;
+    if (liveIndex != null && liveIndex != _windowCurrent) {
+      _onPlayerIndexChanged(liveIndex);
+    }
   }
 
   // ---- Observable state ----------------------------------------------------
@@ -118,6 +131,13 @@ class PlayerState extends ChangeNotifier {
 
     _player.positionStream.listen((p) {
       position = p;
+      // Safety net: the lock-screen skip on iOS can advance the engine without
+      // the currentIndex event reaching Dart (app suspended / resumed), so the
+      // UI would keep showing the previous track. Reconcile on every tick.
+      final liveIndex = _player.currentIndex;
+      if (liveIndex != null && liveIndex != _windowCurrent) {
+        _onPlayerIndexChanged(liveIndex);
+      }
       _updateLyricIndex();
       // Persist progress at most every 5 seconds so a restart resumes near
       // the same spot without hammering prefs on every tick.
@@ -565,12 +585,16 @@ class PlayerState extends ChangeNotifier {
   void _onPlayerIndexChanged(int? playerIndex) {
     if (playerIndex == null) return;
     if (playerIndex < 0 || playerIndex >= _windowIndexes.length) return;
-    if (playerIndex == _windowCurrent) return;
-    _windowCurrent = playerIndex;
 
     final songIndex = _windowIndexes[playerIndex];
     if (songIndex < 0 || songIndex >= playlist.length) return;
-    if (songIndex == currentIndex) return;
+    // Compare against the playlist index, not the cached window position: the
+    // cache can be stale after a native skip while the app was suspended.
+    if (songIndex == currentIndex) {
+      _windowCurrent = playerIndex;
+      return;
+    }
+    _windowCurrent = playerIndex;
 
     currentIndex = songIndex;
     currentSong = playlist[songIndex];
@@ -897,6 +921,7 @@ class PlayerState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _lifecycle.dispose();
     _saveState();
     _player.dispose();
     super.dispose();

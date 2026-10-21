@@ -343,18 +343,53 @@ class ApiService {
   }) async {
     // The backend resolves lyrics by metadata; without `title` it answers
     // `no lyric found` even when the song does have lyrics.
-    final data = await _get('api/external/lyric', {
-      'platform': platform,
-      'id': id,
-      if (title.isNotEmpty) 'title': title,
-      if (artist.isNotEmpty) 'artist': artist,
-    });
-    final lines = _extractLyrics(data);
-    debugPrint(
-      '[lyric] type=${data.runtimeType} parsed=${lines.length} '
-      'preview=${_preview(data)}',
-    );
-    return lines;
+    //
+    // It also supports matching by title alone, so fall back progressively:
+    // id+title -> title+artist -> cleaned title (brackets stripped).
+    final cleaned = _cleanTitle(title);
+    final attempts = <Map<String, String>>[
+      {
+        'platform': platform,
+        'id': id,
+        if (title.isNotEmpty) 'title': title,
+        if (artist.isNotEmpty) 'artist': artist,
+      },
+      if (title.isNotEmpty)
+        {
+          'platform': platform,
+          'title': title,
+          if (artist.isNotEmpty) 'artist': artist,
+        },
+      if (cleaned.isNotEmpty && cleaned != title)
+        {
+          'platform': platform,
+          'title': cleaned,
+          if (artist.isNotEmpty) 'artist': artist,
+        },
+    ];
+
+    for (final params in attempts) {
+      try {
+        final data = await _get('api/external/lyric', params);
+        final lines = _extractLyrics(data);
+        debugPrint(
+          '[lyric] params=$params parsed=${lines.length} '
+          'preview=${_preview(data)}',
+        );
+        if (lines.isNotEmpty) return lines;
+      } catch (_) {
+        // Try the next strategy.
+      }
+    }
+    return const [];
+  }
+
+  /// Drops bracketed suffixes such as "(Live)" / "（《…》主题曲）".
+  String _cleanTitle(String title) {
+    return title
+        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   String _preview(dynamic data) {
