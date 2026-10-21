@@ -381,6 +381,9 @@ class PlayerState extends ChangeNotifier {
     }
 
     if (currentPos < 0 || sources.isEmpty) return false;
+    // A newer playAt() may have started while URLs were resolving; loading the
+    // stale window would hijack playback and desync the index mapping.
+    if (token != _playToken) return false;
 
     try {
       await _player.setAudioSources(
@@ -392,6 +395,7 @@ class PlayerState extends ChangeNotifier {
       debugPrint('[player] window load failed: $e');
       return false;
     }
+    if (token != _playToken) return false;
     _windowIndexes = indexes;
     _windowCurrent = currentPos;
     _hasSource = true;
@@ -584,6 +588,9 @@ class PlayerState extends ChangeNotifier {
   /// track transitions and the lock-screen / headset skip buttons.
   void _onPlayerIndexChanged(int? playerIndex) {
     if (playerIndex == null) return;
+    // While a new window is loading the engine still reports indexes of the
+    // previous playlist; mapping them would move the UI to a wrong track.
+    if (isLoadingUrl) return;
     if (playerIndex < 0 || playerIndex >= _windowIndexes.length) return;
 
     final songIndex = _windowIndexes[playerIndex];
@@ -661,12 +668,16 @@ class PlayerState extends ChangeNotifier {
 
   Future<void> prev() async {
     if (playlist.isEmpty) return;
+    final target = currentIndex - 1 < 0 ? playlist.length - 1 : currentIndex - 1;
+    if (isLoadingUrl) {
+      await playAt(target);
+      return;
+    }
     final pos = _windowIndexes.indexOf(currentIndex);
     if (pos > 0) {
       await _player.seekToPrevious();
       return;
     }
-    final target = currentIndex - 1 < 0 ? playlist.length - 1 : currentIndex - 1;
     await playAt(target);
   }
 
@@ -680,12 +691,18 @@ class PlayerState extends ChangeNotifier {
       autoNext();
       return;
     }
+    final target = currentIndex + 1 >= playlist.length ? 0 : currentIndex + 1;
+    // While a track is still loading, the engine's playlist is the previous
+    // window: seeking inside it would jump to an unrelated song.
+    if (isLoadingUrl) {
+      await playAt(target);
+      return;
+    }
     final pos = _windowIndexes.indexOf(currentIndex);
     if (pos >= 0 && pos < _windowIndexes.length - 1) {
       await _player.seekToNext();
       return;
     }
-    final target = currentIndex + 1 >= playlist.length ? 0 : currentIndex + 1;
     await playAt(target);
   }
 
@@ -766,6 +783,8 @@ class PlayerState extends ChangeNotifier {
         song.id,
         title: song.title,
         artist: song.artist,
+        source: song.source,
+        durationSeconds: song.durationValue.inSeconds,
       );
       if (lyricToken != _lyricToken || token != _playToken) return;
       lyrics = lines;

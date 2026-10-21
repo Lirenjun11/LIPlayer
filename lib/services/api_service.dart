@@ -340,6 +340,8 @@ class ApiService {
     String id, {
     String title = '',
     String artist = '',
+    String source = '',
+    int durationSeconds = 0,
   }) async {
     // The backend resolves lyrics by metadata; without `title` it answers
     // `no lyric found` even when the song does have lyrics.
@@ -347,24 +349,41 @@ class ApiService {
     // It also supports matching by title alone, so fall back progressively:
     // id+title -> title+artist -> cleaned title (brackets stripped).
     final cleaned = _cleanTitle(title);
+    final duration =
+        durationSeconds > 0 ? '$durationSeconds' : null;
+
+    // Strategy 1 (best hit rate): platform + id + source + title + artist +
+    // duration, exactly as the backend expects for tracks coming from a
+    // playlist / toplist detail.
     final attempts = <Map<String, String>>[
       {
         'platform': platform,
         'id': id,
+        if (source.isNotEmpty) 'source': source,
         if (title.isNotEmpty) 'title': title,
         if (artist.isNotEmpty) 'artist': artist,
+        if (duration != null) 'duration': duration,
       },
+      // Strategy 2: only the metadata, scraped by the backend.
       if (title.isNotEmpty)
         {
-          'platform': platform,
           'title': title,
           if (artist.isNotEmpty) 'artist': artist,
+          if (duration != null) 'duration': duration,
         },
+      // Strategy 3: cleaned title (brackets stripped).
       if (cleaned.isNotEmpty && cleaned != title)
         {
-          'platform': platform,
           'title': cleaned,
           if (artist.isNotEmpty) 'artist': artist,
+          if (duration != null) 'duration': duration,
+        },
+      // Strategy 4: force a re-match, skipping the lyric cache/library.
+      if (title.isNotEmpty)
+        {
+          'title': cleaned.isNotEmpty ? cleaned : title,
+          if (artist.isNotEmpty) 'artist': artist,
+          'force': '1',
         },
     ];
 

@@ -14,86 +14,129 @@ Future<void> showQueueSheet(BuildContext context) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (context) {
-      final player = context.watch<PlayerState>();
-      return SizedBox(
-        height: MediaQuery.of(context).size.height * 0.65,
-        child: Column(
-          children: [
-            Container(
-              width: 36,
-              height: 5,
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.text3,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('播放队列',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.text)),
-                  Row(
-                    children: [
-                      Text('${player.playlist.length} 首',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.text2)),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: player.clearPlaylist,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 11, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.accent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Text('清空',
-                              style: TextStyle(
-                                  fontSize: 12, color: Color(0xFFFF8BAB))),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: AppColors.border),
-            Expanded(
-              child: player.playlist.isEmpty
-                  ? Center(
-                      child: Text('播放队列为空',
-                          style: TextStyle(color: AppColors.text2)),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      itemCount: player.playlist.length,
-                      itemBuilder: (context, index) {
-                        final song = player.playlist[index];
-                        final active = index == player.currentIndex;
-                        return SongTile(
-                          song: song,
-                          playing: active,
-                          showDuration: false,
-                          onTap: () {
-                            player.playAt(index);
-                            Navigator.of(context).pop();
-                          },
-                          removeLabel: '从播放队列移除',
-                          onRemove: () => player.removeFromPlaylist(index),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      );
-    },
+    builder: (context) => const _QueueSheet(),
   );
+}
+
+class _QueueSheet extends StatefulWidget {
+  const _QueueSheet();
+
+  @override
+  State<_QueueSheet> createState() => _QueueSheetState();
+}
+
+class _QueueSheetState extends State<_QueueSheet> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Open on the playing track instead of the top of the queue.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scrollToCurrent() {
+    if (!mounted || !_controller.hasClients) return;
+    final index = context.read<PlayerState>().currentIndex;
+    if (index <= 0) return;
+
+    // SongTile has a fixed layout (~62 logical px); scale it with the user's
+    // font setting so the estimate stays close.
+    final scale = MediaQuery.textScalerOf(context).scale(1.0);
+    final itemHeight = 62.0 * scale;
+    final maxExtent = _controller.position.maxScrollExtent;
+    final target = (index * itemHeight - 100).clamp(0.0, maxExtent);
+    _controller.jumpTo(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerState>();
+
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.65,
+      child: Column(
+        children: [
+          Container(
+            width: 36,
+            height: 5,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.text3,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('播放队列',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.text)),
+                Row(
+                  children: [
+                    Text('${player.playlist.length} 首',
+                        style:
+                            TextStyle(fontSize: 12, color: AppColors.text2)),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: player.clearPlaylist,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 11, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text('清空',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFFFF8BAB))),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: AppColors.border),
+          Expanded(
+            child: player.playlist.isEmpty
+                ? Center(
+                    child: Text('播放队列为空',
+                        style: TextStyle(color: AppColors.text2)),
+                  )
+                : ListView.builder(
+                    controller: _controller,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    itemCount: player.playlist.length,
+                    itemBuilder: (context, index) {
+                      final song = player.playlist[index];
+                      final active = index == player.currentIndex;
+                      return SongTile(
+                        song: song,
+                        playing: active,
+                        showDuration: false,
+                        onTap: () {
+                          player.playAt(index);
+                          Navigator.of(context).pop();
+                        },
+                        removeLabel: '从播放队列移除',
+                        onRemove: () => player.removeFromPlaylist(index),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
