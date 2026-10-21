@@ -1,7 +1,7 @@
 name: musicplayer
 description: Cross-platform (iOS/Android) music player with login, ported from the MusicFree Vue page.
 publish_to: "none"
-version: 1.0.7+8
+version: 1.0.8+9
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

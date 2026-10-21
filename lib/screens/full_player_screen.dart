@@ -566,8 +566,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen>
                       fontSize: 11, color: AppColors.text2),
                 ),
                 Text(
-                  formatDuration(player.duration -
-                      Duration(milliseconds: value.round())),
+                  // Total length, not the remaining time.
+                  formatDuration(player.duration),
                   style: TextStyle(
                       fontSize: 11, color: AppColors.text2),
                 ),

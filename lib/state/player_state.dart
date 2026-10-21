@@ -418,6 +418,11 @@ class PlayerState extends ChangeNotifier {
     duration =
         _actualDurations[currentSong!.uniqueKey] ?? currentSong!.durationValue;
     isLoadingUrl = true;
+    // Silence the previous track while the new URL is resolved; otherwise it
+    // keeps playing until the new source is ready.
+    if (_hasSource) {
+      unawaited(_player.pause());
+    }
     notifyListeners();
 
     try {
@@ -590,7 +595,7 @@ class PlayerState extends ChangeNotifier {
     if (playerIndex == null) return;
     // While a new window is loading the engine still reports indexes of the
     // previous playlist; mapping them would move the UI to a wrong track.
-    if (isLoadingUrl) return;
+    if (isLoadingUrl || _rebuilding) return;
     if (playerIndex < 0 || playerIndex >= _windowIndexes.length) return;
 
     final songIndex = _windowIndexes[playerIndex];
@@ -623,7 +628,7 @@ class PlayerState extends ChangeNotifier {
   /// Rebuilds the window once the current track reaches its edge, resuming at
   /// the same position so the re-load is inaudible.
   Future<void> _maybeExtendWindow() async {
-    if (!_hasSource || _rebuilding) return;
+    if (!_hasSource || _rebuilding || isLoadingUrl) return;
     final pos = _windowIndexes.indexOf(currentIndex);
     if (pos < 0) return;
     if (pos > 0 && pos < _windowIndexes.length - 1) return;
@@ -631,7 +636,9 @@ class PlayerState extends ChangeNotifier {
     _rebuilding = true;
     try {
       final token = _playToken;
-      final resume = position;
+      // Read the live position: the cached one can lag behind (or be reset to
+      // zero by a track change) and would restart the song from the beginning.
+      final resume = _player.position;
       final ok = await _loadWindow(currentIndex, token, initialPosition: resume);
       if (!ok || token != _playToken) return;
       await _player.play();
@@ -642,11 +649,13 @@ class PlayerState extends ChangeNotifier {
 
   /// Rebuilds the window in place after the queue was edited.
   Future<void> _refreshWindow() async {
-    if (!_hasSource || currentSong == null || _rebuilding) return;
+    if (!_hasSource || currentSong == null || _rebuilding || isLoadingUrl) {
+      return;
+    }
     _rebuilding = true;
     try {
       final token = _playToken;
-      final resume = position;
+      final resume = _player.position;
       final ok = await _loadWindow(currentIndex, token, initialPosition: resume);
       if (!ok || token != _playToken) return;
       await _player.play();
@@ -735,7 +744,8 @@ class PlayerState extends ChangeNotifier {
     notifyListeners();
     onError?.call('音质已切换为「${next.label}」');
     if (currentSong != null && _hasSource) {
-      _pendingSeek = position;
+      // Live position, so switching quality does not restart the track.
+      _pendingSeek = _player.position;
       await playAt(currentIndex);
     }
   }
